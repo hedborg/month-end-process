@@ -89,6 +89,8 @@
   }
   .modal-backdrop.show { display: flex; }
   .modal { background: #fff; border-radius: 10px; padding: 20px; width: 420px; max-width: 90vw; max-height: 85vh; overflow: auto; }
+  .modal.modal-wide { width: 560px; }
+  .task-detail-subtitle { color: #6b7280; font-size: 12px; margin-top: -8px; margin-bottom: 12px; }
   .modal h2 { margin-top: 0; font-size: 16px; }
   .modal .field { margin-bottom: 12px; display: flex; flex-direction: column; gap: 4px; }
   .modal .field label { font-size: 12px; color: #6b7280; }
@@ -112,6 +114,8 @@
     display: inline-block; font-weight: 600; font-size: 12px;
     border-radius: 999px; padding: 4px 10px;
   }
+  button.pill-btn { border: none; cursor: pointer; }
+  button.pill-btn:hover { box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.15); }
   .cycle-link {
     background: none; border: none; color: #2563eb; font-weight: 700;
     font-size: 12px; text-transform: uppercase; cursor: pointer; padding: 0;
@@ -245,6 +249,20 @@
     <div class="actions">
       <button class="secondary" id="usersModalClose">Close</button>
       <button id="usersModalAdd">Add</button>
+    </div>
+  </div>
+</div>
+
+<!-- Task detail modal (quick edit from Overview) -->
+<div class="modal-backdrop" id="taskDetailModalBackdrop">
+  <div class="modal modal-wide">
+    <h2 id="taskDetailTitle">Task</h2>
+    <div id="taskDetailSubtitle" class="task-detail-subtitle"></div>
+    <div id="taskDetailFields"></div>
+    <div class="actions">
+      <button class="secondary" id="taskDetailOpenChecklist">Open in Checklist</button>
+      <div class="spacer"></div>
+      <button class="secondary" id="taskDetailClose">Close</button>
     </div>
   </div>
 </div>
@@ -453,7 +471,7 @@ function renderOverview() {
         const label = STATUS_LABELS[cell.booking_status] || cell.booking_status;
         const dateHtml = (cell.booking_status === 'done' && cell.date_finished)
           ? `<div class="overview-date">${cell.date_finished.slice(0, 10)}</div>` : '';
-        return `<td class="overview-cell"><span class="status-pill status-${cell.booking_status}">${label}</span>${dateHtml}</td>`;
+        return `<td class="overview-cell"><button class="status-pill pill-btn status-${cell.booking_status}" data-task-id="${cell.task_id}" data-cycle-id="${c.id}">${label}</button>${dateHtml}</td>`;
       }).join('')}
     </tr>
   `).join('');
@@ -466,6 +484,75 @@ function switchView(view) {
   document.getElementById('checklistHeaderControls').style.display = view === 'checklist' ? 'flex' : 'none';
   document.getElementById('tabOverviewBtn').classList.toggle('active', view === 'overview');
   document.getElementById('tabChecklistBtn').classList.toggle('active', view === 'checklist');
+}
+
+// ---- Task detail modal (quick edit from Overview) ----
+
+let taskDetailCycleId = null;
+
+function renderTaskDetailFields(task) {
+  document.getElementById('taskDetailTitle').textContent = task.task_name;
+  document.getElementById('taskDetailSubtitle').textContent = task.cycle_label;
+
+  document.getElementById('taskDetailFields').innerHTML = `
+    <div class="field">
+      <label>Description</label>
+      <textarea data-field="description" data-id="${task.id}">${escHtml(task.description)}</textarea>
+    </div>
+    <div class="field">
+      <label>Dependency</label>
+      <input type="text" data-field="dependency_text" data-id="${task.id}" value="${escAttr(task.dependency_text)}">
+    </div>
+    <div class="field">
+      <label>Due</label>
+      <input type="text" data-field="due_date" data-id="${task.id}" value="${escAttr(task.due_date)}">
+    </div>
+    <div class="field">
+      <label>Booking Responsible</label>
+      ${userSelectHtml('booking_responsible_id', task.booking_responsible_id, task.id)}
+    </div>
+    <div class="field">
+      <label>Booking Status</label>
+      ${statusSelectHtml('booking_status', task.booking_status, task.id)}
+    </div>
+    <div class="field">
+      <label>Quality Check</label>
+      ${userSelectHtml('quality_check_id', task.quality_check_id, task.id)}
+    </div>
+    <div class="field">
+      <label>Check Status</label>
+      ${statusSelectHtml('check_status', task.check_status, task.id)}
+    </div>
+    <div class="field">
+      <label>Finished</label>
+      <input type="date" data-field="date_finished" data-id="${task.id}" value="${task.date_finished ? task.date_finished.slice(0, 10) : ''}">
+    </div>
+    <div class="field">
+      <label>Comment</label>
+      <textarea data-field="comment" data-id="${task.id}">${escHtml(task.comment)}</textarea>
+    </div>
+    <div class="field">
+      <label>Link URL</label>
+      <div class="link-row">
+        <input type="text" data-field="url" data-id="${task.id}" placeholder="Link URL" value="${escAttr(task.url)}">
+        ${linkHtml(task.url, '🔗')}
+      </div>
+    </div>
+    <div class="field">
+      <label>Power BI URL</label>
+      <div class="link-row">
+        <input type="text" data-field="powerbi_url" data-id="${task.id}" placeholder="Power BI URL" value="${escAttr(task.powerbi_url)}">
+        ${linkHtml(task.powerbi_url, '📊')}
+      </div>
+    </div>
+  `;
+}
+
+async function openTaskDetail(taskId, cycleId) {
+  const task = await api(`/tasks/${taskId}`);
+  taskDetailCycleId = cycleId;
+  renderTaskDetailFields(task);
+  document.getElementById('taskDetailModalBackdrop').classList.add('show');
 }
 
 async function refreshAll() {
@@ -493,6 +580,48 @@ document.getElementById('overviewHeaderRow').addEventListener('click', async (e)
   renderCycleSelect();
   renderCycleStatus();
   await loadTasks();
+});
+
+document.getElementById('overviewBody').addEventListener('click', async (e) => {
+  const btn = e.target.closest('.pill-btn');
+  if (!btn) return;
+  await openTaskDetail(btn.dataset.taskId, parseInt(btn.dataset.cycleId, 10));
+});
+
+document.getElementById('taskDetailClose').addEventListener('click', () => {
+  document.getElementById('taskDetailModalBackdrop').classList.remove('show');
+});
+
+document.getElementById('taskDetailOpenChecklist').addEventListener('click', async () => {
+  document.getElementById('taskDetailModalBackdrop').classList.remove('show');
+  currentCycleId = taskDetailCycleId;
+  switchView('checklist');
+  renderCycleSelect();
+  renderCycleStatus();
+  await loadTasks();
+});
+
+document.getElementById('taskDetailFields').addEventListener('change', async (e) => {
+  const el = e.target;
+  const field = el.dataset.field;
+  if (!field) return;
+  const id = el.dataset.id;
+  let value = el.value;
+  if (field.endsWith('_id')) value = value ? parseInt(value, 10) : null;
+  const updated = await api(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify({ [field]: value || null }) });
+
+  if (field === 'booking_status' || field === 'check_status') {
+    el.className = `status-select status-${value}`;
+  }
+
+  for (const row of overviewData.rows || []) {
+    const cell = row.cells[taskDetailCycleId];
+    if (cell && cell.task_id === parseInt(id, 10)) {
+      cell.booking_status = updated.booking_status;
+      cell.date_finished = updated.date_finished;
+    }
+  }
+  renderOverview();
 });
 
 document.getElementById('cycleSelect').addEventListener('change', async (e) => {

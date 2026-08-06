@@ -58,7 +58,11 @@ The app opens on an Overview tab: a pivot of every task (rows) against the
 last 6 cycles (columns, oldest to newest), showing booking status
 color-coded per cell, plus the finished date under any cell marked Done.
 Click a column's Year-Month header to drill straight into that cycle's full
-checklist.
+checklist. Click a task's status pill instead to open a quick-edit modal for
+just that task/month — every field (description, owners, both statuses,
+finished date, comment, links) editable without leaving the Overview, plus
+an "Open in Checklist" link if you need the full view (reordering, delete,
+adding a task, etc.).
 
 A task is matched across months by lineage, not by name: cloning a task sets
 its `cloned_from_task_id` back to the source task, and `GET

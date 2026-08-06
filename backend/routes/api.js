@@ -168,6 +168,23 @@ router.get('/cycles/:id/tasks', asyncHandler(async (req, res) => {
   res.json(rows);
 }));
 
+router.get('/tasks/:id', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT t.*,
+            ur.name AS booking_responsible_name,
+            uq.name AS quality_check_name,
+            c.label AS cycle_label
+     FROM tasks t
+     LEFT JOIN users ur ON ur.id = t.booking_responsible_id
+     LEFT JOIN users uq ON uq.id = t.quality_check_id
+     JOIN cycles c ON c.id = t.cycle_id
+     WHERE t.id = $1`,
+    [req.params.id],
+  );
+  if (!rows.length) return res.status(404).json({ error: 'not found' });
+  res.json(rows[0]);
+}));
+
 router.post('/cycles/:id/tasks', asyncHandler(async (req, res) => {
   const {
     task_name, description, dependency_text, due_date,
