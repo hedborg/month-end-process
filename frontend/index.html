@@ -4,14 +4,35 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Month-End Process</title>
+<script>
+  // Applied before first paint to avoid a flash of the wrong theme. Light is
+  // the default — dark only kicks in if the user explicitly chose it before.
+  try {
+    if (localStorage.getItem('theme') === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+  } catch (e) {}
+</script>
 <style>
   :root {
+    --bg: #fafafa;
+    --surface: #ffffff;
+    --surface-2: #f9fafb;
+    --text: #111827;
+    --text-muted: #6b7280;
+    --text-faint: #9ca3af;
+    --border: #e5e7eb;
+    --input-focus-border: #9ca3af;
+    --accent: #2563eb;
+    --modal-backdrop: rgba(0, 0, 0, 0.4);
+
+    --btn-bg: #111827; --btn-text: #ffffff; --btn-hover-bg: #1f2937;
+    --btn2-bg: #ffffff; --btn2-text: #111827; --btn2-border: var(--border); --btn2-hover-bg: #f3f4f6;
+    --btn-danger-text: #b91c1c; --btn-danger-border: #fecaca; --btn-danger-hover-bg: #fef2f2;
+
     --gray: #6b7280; --gray-bg: #f3f4f6;
     --blue: #2563eb; --blue-bg: #dbeafe;
     --amber: #b45309; --amber-bg: #fef3c7;
-    --green: #15803d; --green-bg: #dcfce7;
-    --slate: #94a3b8; --slate-bg: #f1f5f9;
-    --border: #e5e7eb;
 
     /* Task status colors */
     --status-red: #b91c1c; --status-red-bg: #fee2e2;
@@ -20,28 +41,57 @@
     --status-dgreen: #14532d; --status-dgreen-bg: #86efac;
     --status-grey: #6b7280; --status-grey-bg: #f1f5f9;
   }
+
+  :root[data-theme="dark"] {
+    --bg: #0f1115;
+    --surface: #171a20;
+    --surface-2: #1f232b;
+    --text: #e5e7eb;
+    --text-muted: #9aa4b2;
+    --text-faint: #6b7280;
+    --border: #2c313a;
+    --input-focus-border: #4b5563;
+    --accent: #60a5fa;
+    --modal-backdrop: rgba(0, 0, 0, 0.6);
+
+    --btn-bg: #e5e7eb; --btn-text: #111827; --btn-hover-bg: #f3f4f6;
+    --btn2-bg: #1f232b; --btn2-text: #e5e7eb; --btn2-border: #343a45; --btn2-hover-bg: #262b34;
+    --btn-danger-text: #f87171; --btn-danger-border: #5b2323; --btn-danger-hover-bg: #2a1616;
+
+    --gray: #9aa4b2; --gray-bg: #262b34;
+    --blue: #60a5fa; --blue-bg: #1e3a5f;
+    --amber: #fbbf24; --amber-bg: #4a3510;
+
+    --status-red: #f87171; --status-red-bg: #4a1d1d;
+    --status-orange: #fb923c; --status-orange-bg: #4a2a10;
+    --status-lgreen: #a3e635; --status-lgreen-bg: #2c3a10;
+    --status-dgreen: #4ade80; --status-dgreen-bg: #123a22;
+    --status-grey: #9aa4b2; --status-grey-bg: #262b34;
+  }
+
   * { box-sizing: border-box; }
   body {
     margin: 0; font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-    background: #fafafa; color: #111827; font-size: 14px;
+    background: var(--bg); color: var(--text); font-size: 14px;
+    transition: background-color .15s ease, color .15s ease;
   }
   header {
     display: flex; align-items: center; gap: 12px; padding: 12px 20px;
-    background: #fff; border-bottom: 1px solid var(--border); flex-wrap: wrap;
+    background: var(--surface); border-bottom: 1px solid var(--border); flex-wrap: wrap;
   }
   header h1 { font-size: 18px; margin: 0; margin-right: 8px; white-space: nowrap; }
   select, input, button, textarea {
     font-family: inherit; font-size: 13px; padding: 6px 8px;
-    border: 1px solid var(--border); border-radius: 6px; background: #fff;
+    border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text);
   }
   button {
-    cursor: pointer; background: #111827; color: #fff; border: none;
+    cursor: pointer; background: var(--btn-bg); color: var(--btn-text); border: none;
   }
-  button:hover { background: #1f2937; }
-  button.secondary { background: #fff; color: #111827; border: 1px solid var(--border); }
-  button.secondary:hover { background: #f3f4f6; }
-  button.danger { background: #fff; color: #b91c1c; border: 1px solid #fecaca; }
-  button.danger:hover { background: #fef2f2; }
+  button:hover { background: var(--btn-hover-bg); }
+  button.secondary { background: var(--btn2-bg); color: var(--btn2-text); border: 1px solid var(--btn2-border); }
+  button.secondary:hover { background: var(--btn2-hover-bg); }
+  button.danger { background: var(--surface); color: var(--btn-danger-text); border: 1px solid var(--btn-danger-border); }
+  button.danger:hover { background: var(--btn-danger-hover-bg); }
   .spacer { flex: 1; }
   .cycle-badge {
     font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600;
@@ -53,22 +103,22 @@
 
   main { padding: 16px 20px; }
   .toolbar { display: flex; align-items: center; gap: 16px; margin-bottom: 10px; }
-  .toolbar label { display: flex; align-items: center; gap: 6px; color: #374151; }
+  .toolbar label { display: flex; align-items: center; gap: 6px; color: var(--text-muted); }
 
-  table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); }
   th, td { border-bottom: 1px solid var(--border); padding: 6px 8px; text-align: left; vertical-align: top; }
-  th { background: #f9fafb; font-size: 12px; text-transform: uppercase; color: #6b7280; position: sticky; top: 0; }
+  th { background: var(--surface-2); font-size: 12px; text-transform: uppercase; color: var(--text-muted); position: sticky; top: 0; }
   tr.completed-row { opacity: 0.55; }
-  tr:hover { background: #f9fafb; }
+  tr:hover { background: var(--surface-2); }
   tr.dragging { opacity: 0.4; }
-  tr.drag-over { box-shadow: inset 0 2px 0 0 #2563eb; }
-  .drag-handle { cursor: grab; text-align: center; color: #9ca3af; user-select: none; }
+  tr.drag-over { box-shadow: inset 0 2px 0 0 var(--accent); }
+  .drag-handle { cursor: grab; text-align: center; color: var(--text-faint); user-select: none; }
   .drag-handle:active { cursor: grabbing; }
   td input, td select, td textarea {
-    width: 100%; border: 1px solid transparent; background: transparent; padding: 4px;
+    width: 100%; border: 1px solid transparent; background: transparent; padding: 4px; color: var(--text);
   }
   td input:hover, td select:hover, td textarea:hover { border-color: var(--border); }
-  td input:focus, td select:focus, td textarea:focus { border-color: #9ca3af; background: #fff; }
+  td input:focus, td select:focus, td textarea:focus { border-color: var(--input-focus-border); background: var(--surface); }
   textarea { resize: vertical; min-height: 32px; }
   .col-name { min-width: 200px; }
   .col-desc { min-width: 220px; }
@@ -84,43 +134,45 @@
   .status-n_a { background: var(--status-grey-bg); color: var(--status-grey); }
 
   .modal-backdrop {
-    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+    display: none; position: fixed; inset: 0; background: var(--modal-backdrop);
     align-items: center; justify-content: center; z-index: 100;
   }
   .modal-backdrop.show { display: flex; }
-  .modal { background: #fff; border-radius: 10px; padding: 20px; width: 420px; max-width: 90vw; max-height: 85vh; overflow: auto; }
+  .modal { background: var(--surface); border-radius: 10px; padding: 20px; width: 420px; max-width: 90vw; max-height: 85vh; overflow: auto; }
   .modal.modal-wide { width: 560px; }
-  .task-detail-subtitle { color: #6b7280; font-size: 12px; margin-top: -8px; margin-bottom: 12px; }
+  .task-detail-subtitle { color: var(--text-muted); font-size: 12px; margin-top: -8px; margin-bottom: 12px; }
   .modal h2 { margin-top: 0; font-size: 16px; }
   .modal .field { margin-bottom: 12px; display: flex; flex-direction: column; gap: 4px; }
-  .modal .field label { font-size: 12px; color: #6b7280; }
+  .modal .field label { font-size: 12px; color: var(--text-muted); }
   .modal .field input, .modal .field select { padding: 8px; }
   .modal .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
   .user-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
   .user-row span { flex: 1; }
-  .empty-state { padding: 40px; text-align: center; color: #9ca3af; }
+  .empty-state { padding: 40px; text-align: center; color: var(--text-faint); }
 
   .tab-btn {
-    background: none; border: none; color: #6b7280; font-weight: 600;
+    background: none; border: none; color: var(--text-muted); font-weight: 600;
     padding: 6px 10px; border-radius: 6px; cursor: pointer;
   }
-  .tab-btn:hover { background: #f3f4f6; color: #111827; }
-  .tab-btn.active { background: #111827; color: #fff; }
+  .tab-btn:hover { background: var(--btn2-hover-bg); color: var(--text); }
+  .tab-btn.active { background: var(--btn-bg); color: var(--btn-text); }
   .checklist-header-controls { display: flex; align-items: center; gap: 12px; }
 
   .overview-cell { text-align: center; }
-  .overview-date { font-size: 11px; color: #6b7280; margin-top: 2px; }
+  .overview-date { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
   .status-pill {
     display: inline-block; font-weight: 600; font-size: 12px;
     border-radius: 999px; padding: 4px 10px;
   }
   button.pill-btn { border: none; cursor: pointer; }
-  button.pill-btn:hover { box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.15); }
+  button.pill-btn:hover { box-shadow: 0 0 0 2px rgba(128, 128, 128, 0.35); }
   .cycle-link {
-    background: none; border: none; color: #2563eb; font-weight: 700;
+    background: none; border: none; color: var(--accent); font-weight: 700;
     font-size: 12px; text-transform: uppercase; cursor: pointer; padding: 0;
   }
   .cycle-link:hover { background: none; text-decoration: underline; }
+
+  #themeToggleBtn { font-size: 16px; line-height: 1; padding: 6px 10px; }
 </style>
 </head>
 <body>
@@ -138,6 +190,7 @@
   </div>
   <div class="spacer"></div>
   <button class="secondary" id="manageUsersBtn">Users</button>
+  <button class="secondary" id="themeToggleBtn" title="Toggle dark mode">🌙</button>
 </header>
 
 <main>
@@ -562,6 +615,21 @@ async function refreshAll() {
   switchView('overview');
   await loadOverview();
 }
+
+// ---- Theme toggle (light default, dark opt-in, remembered) ----
+
+function setTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  document.getElementById('themeToggleBtn').textContent = theme === 'dark' ? '☀️' : '🌙';
+  try { localStorage.setItem('theme', theme); } catch (e) { /* private browsing, etc. */ }
+}
+
+document.getElementById('themeToggleBtn').addEventListener('click', () => {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  setTheme(isDark ? 'light' : 'dark');
+});
+
+setTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
 
 // ---- Event wiring ----
 

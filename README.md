@@ -5,6 +5,9 @@ A checklist tool for running the monthly accounting close. Replaces the
 can track multiple months in parallel, assign tasks to people, and roll one
 month's checklist forward into the next.
 
+Light mode is the default; the 🌙 button in the header toggles dark mode and
+remembers the choice per browser (`localStorage`, not per-user).
+
 ## Quick start (Docker)
 
 ```bash
