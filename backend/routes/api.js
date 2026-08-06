@@ -299,7 +299,8 @@ router.get('/report/pivot', asyncHandler(async (req, res) => {
        SELECT t.id, l.root_id FROM tasks t JOIN lineage l ON t.cloned_from_task_id = l.id
      )
      SELECT t.id AS task_id, t.cycle_id, t.task_name, t.sort_order,
-            t.booking_status, t.date_finished, l.root_id
+            t.booking_status, t.date_finished,
+            t.booking_responsible_id, t.quality_check_id, l.root_id
      FROM tasks t
      JOIN lineage l ON l.id = t.id
      WHERE t.cycle_id = ANY($1)`,
@@ -319,6 +320,8 @@ router.get('/report/pivot', asyncHandler(async (req, res) => {
         task_id: r.task_id,
         booking_status: r.booking_status,
         date_finished: r.date_finished,
+        booking_responsible_id: r.booking_responsible_id,
+        quality_check_id: r.quality_check_id,
       };
     }
   }

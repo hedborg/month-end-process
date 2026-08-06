@@ -195,6 +195,10 @@
 
 <main>
   <div id="overviewPanel">
+    <div class="toolbar">
+      <label>Filter by user (Booking Responsible or Quality Check)</label>
+      <select id="overviewUserFilter"><option value="">All Users</option></select>
+    </div>
     <div id="overviewEmptyState" class="empty-state" style="display:none">No cycles yet — create one to get started.</div>
     <div id="overviewTableWrap">
       <table id="overviewTable">
@@ -465,19 +469,23 @@ function renderFilterOptions() {
   const respSel = document.getElementById('filterBookingResp');
   const qcSel = document.getElementById('filterQualityCheck');
   const statusSel = document.getElementById('filterBookingStatus');
+  const overviewUserSel = document.getElementById('overviewUserFilter');
   const prevResp = respSel.value, prevQc = qcSel.value, prevStatus = statusSel.value;
+  const prevOverviewUser = overviewUserSel.value;
 
-  const userOptionsHtml = users.map((u) => `<option value="${u.id}">${escHtml(u.name)}</option>`).join('')
-    + '<option value="unassigned">— Unassigned —</option>';
+  const plainUserOptionsHtml = users.map((u) => `<option value="${u.id}">${escHtml(u.name)}</option>`).join('');
+  const userOptionsHtml = plainUserOptionsHtml + '<option value="unassigned">— Unassigned —</option>';
 
   respSel.innerHTML = `<option value="">All Booking Responsible</option>${userOptionsHtml}`;
   qcSel.innerHTML = `<option value="">All Quality Check</option>${userOptionsHtml}`;
   statusSel.innerHTML = '<option value="">All Booking Status</option>'
     + STATUS_OPTIONS.map(([v, label]) => `<option value="${v}">${label}</option>`).join('');
+  overviewUserSel.innerHTML = `<option value="">All Users</option>${plainUserOptionsHtml}`;
 
   respSel.value = prevResp;
   qcSel.value = prevQc;
   statusSel.value = prevStatus;
+  overviewUserSel.value = prevOverviewUser;
 }
 
 function escHtml(v) { return (v || '').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -506,7 +514,13 @@ async function loadOverview() {
 }
 
 function renderOverview() {
-  const { cycles: overviewCycles, rows } = overviewData;
+  const { cycles: overviewCycles, rows: allRows } = overviewData;
+  const userFilter = document.getElementById('overviewUserFilter').value;
+  const rows = userFilter
+    ? allRows.filter((r) => Object.values(r.cells).some((c) => (
+      String(c.booking_responsible_id) === userFilter || String(c.quality_check_id) === userFilter
+    )))
+    : allRows;
 
   document.getElementById('overviewEmptyState').style.display = overviewCycles.length ? 'none' : 'block';
   document.getElementById('overviewTableWrap').style.display = overviewCycles.length ? '' : 'none';
@@ -639,6 +653,8 @@ document.getElementById('tabOverviewBtn').addEventListener('click', async () => 
 });
 
 document.getElementById('tabChecklistBtn').addEventListener('click', () => switchView('checklist'));
+
+document.getElementById('overviewUserFilter').addEventListener('change', renderOverview);
 
 document.getElementById('overviewHeaderRow').addEventListener('click', async (e) => {
   const btn = e.target.closest('[data-cycle-id]');

@@ -67,6 +67,11 @@ finished date, comment, links) editable without leaving the Overview, plus
 an "Open in Checklist" link if you need the full view (reordering, delete,
 adding a task, etc.).
 
+A "Filter by user" dropdown above the table narrows the rows to tasks where
+that person is either the Booking Responsible or the Quality Check on any of
+the displayed months — a personal "what's on my plate" view, without hiding
+the other months for a matched task.
+
 A task is matched across months by lineage, not by name: cloning a task sets
 its `cloned_from_task_id` back to the source task, and `GET
 /api/report/pivot` walks that chain (via a recursive CTE) to group every
