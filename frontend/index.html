@@ -241,6 +241,7 @@
       <tbody id="taskBody"></tbody>
     </table>
     <div id="emptyState" class="empty-state" style="display:none">No cycles yet — create one to get started.</div>
+    <datalist id="checklistTaskNames"></datalist>
   </div>
   </div>
 </main>
@@ -316,6 +317,7 @@
     <h2 id="taskDetailTitle">Task</h2>
     <div id="taskDetailSubtitle" class="task-detail-subtitle"></div>
     <div id="taskDetailFields"></div>
+    <datalist id="taskDetailTaskNames"></datalist>
     <div class="actions">
       <button class="secondary" id="taskDetailOpenChecklist">Open in Checklist</button>
       <div class="spacer"></div>
@@ -434,6 +436,10 @@ function renderTasks() {
     return true;
   });
 
+  const uniqueTaskNames = [...new Set(tasks.map((t) => t.task_name))];
+  document.getElementById('checklistTaskNames').innerHTML = uniqueTaskNames
+    .map((name) => `<option value="${escAttr(name)}">`).join('');
+
   document.getElementById('emptyState').style.display = cycles.length ? 'none' : 'block';
   document.getElementById('taskTable').style.display = cycles.length ? '' : 'none';
 
@@ -442,7 +448,7 @@ function renderTasks() {
       <td class="drag-handle" draggable="true" data-drag-handle>⠿</td>
       <td class="col-name"><input type="text" data-field="task_name" data-id="${t.id}" value="${escAttr(t.task_name)}"></td>
       <td class="col-desc"><textarea data-field="description" data-id="${t.id}">${escHtml(t.description)}</textarea></td>
-      <td><input type="text" data-field="dependency_text" data-id="${t.id}" value="${escAttr(t.dependency_text)}"></td>
+      <td><input type="text" data-field="dependency_text" data-id="${t.id}" value="${escAttr(t.dependency_text)}" list="checklistTaskNames"></td>
       <td><input type="text" data-field="due_date" data-id="${t.id}" value="${escAttr(t.due_date)}"></td>
       <td>${userSelectHtml('booking_responsible_id', t.booking_responsible_id, t.id)}</td>
       <td>${statusSelectHtml('booking_status', t.booking_status, t.id)}</td>
@@ -568,7 +574,7 @@ function renderTaskDetailFields(task) {
     </div>
     <div class="field">
       <label>Dependency</label>
-      <input type="text" data-field="dependency_text" data-id="${task.id}" value="${escAttr(task.dependency_text)}">
+      <input type="text" data-field="dependency_text" data-id="${task.id}" value="${escAttr(task.dependency_text)}" list="taskDetailTaskNames">
     </div>
     <div class="field">
       <label>Due</label>
@@ -616,9 +622,17 @@ function renderTaskDetailFields(task) {
 }
 
 async function openTaskDetail(taskId, cycleId) {
-  const task = await api(`/tasks/${taskId}`);
+  const [task, siblingTasks] = await Promise.all([
+    api(`/tasks/${taskId}`),
+    api(`/cycles/${cycleId}/tasks`),
+  ]);
   taskDetailCycleId = cycleId;
   renderTaskDetailFields(task);
+
+  const uniqueTaskNames = [...new Set(siblingTasks.map((t) => t.task_name))];
+  document.getElementById('taskDetailTaskNames').innerHTML = uniqueTaskNames
+    .map((name) => `<option value="${escAttr(name)}">`).join('');
+
   document.getElementById('taskDetailModalBackdrop').classList.add('show');
 }
 

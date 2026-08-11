@@ -55,6 +55,11 @@ Status, and Quality Check (each includes an "— Unassigned —" option), plus a
 task URL and the Power BI URL — a 🔗/📊 icon appears next to whichever ones
 are set so they stay clickable while still editable.
 
+Dependency is a text field backed by a `<datalist>` of the current cycle's
+task names — click in and pick one, or keep typing free text. It stays free
+text on purpose: real checklists have dependencies like "All the above" that
+don't map to a single task, so a hard dropdown would lose that.
+
 ## Overview report (home page)
 
 The app opens on an Overview tab: a pivot of every task (rows) against the
