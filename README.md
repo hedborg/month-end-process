@@ -8,6 +8,9 @@ month's checklist forward into the next.
 Light mode is the default; the 🌙 button in the header toggles dark mode and
 remembers the choice per browser (`localStorage`, not per-user).
 
+Using the app day-to-day? See [MANUAL.md](MANUAL.md) instead — this README
+is about running/deploying it.
+
 ## Quick start (Docker)
 
 ```bash
