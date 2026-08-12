@@ -46,7 +46,13 @@ npm run dev
   tracks, matching how the original checklist worked: a *Booking Responsible*
   person/status (doing the work) and a *Quality Check* person/status
   (reviewing it). Status values: `not_started`, `in_progress`, `waiting`,
-  `done`, `n_a`.
+  `ready_to_be_booked`, `done`, `n_a`.
+
+`ready_to_be_booked` sits between `in_progress`/`waiting` and `done` — a
+medium green, distinct from the light green of `in_progress` and the dark
+green of `done`. It's meant for the Quality Check person to signal to the
+Booking Responsible person that the numbers are in and checked, and it's
+ready to actually be booked.
 
 A task counts as complete when its booking status is `done`/`n_a` and — if a
 quality checker is assigned — the check status is also `done`/`n_a`. The

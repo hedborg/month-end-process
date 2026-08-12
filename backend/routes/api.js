@@ -8,7 +8,7 @@ const asyncHandler = (fn) => (req, res) => fn(req, res).catch((err) => {
   res.status(500).json({ error: err.message });
 });
 
-const STATUS_VALUES = ['not_started', 'in_progress', 'waiting', 'done', 'n_a'];
+const STATUS_VALUES = ['not_started', 'in_progress', 'waiting', 'ready_to_be_booked', 'done', 'n_a'];
 
 // ---------------------------------------------------------------------------
 // Users

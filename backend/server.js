@@ -33,6 +33,18 @@ async function migrate() {
       AND src.task_name = t.task_name
       AND t.cloned_from_task_id IS NULL
   `);
+
+  // M2: add the "ready_to_be_booked" status, between in_progress/waiting and done
+  await pool.query(`ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_booking_status_check`);
+  await pool.query(`
+    ALTER TABLE tasks ADD CONSTRAINT tasks_booking_status_check
+      CHECK (booking_status IN ('not_started', 'in_progress', 'waiting', 'ready_to_be_booked', 'done', 'n_a'))
+  `);
+  await pool.query(`ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_check_status_check`);
+  await pool.query(`
+    ALTER TABLE tasks ADD CONSTRAINT tasks_check_status_check
+      CHECK (check_status IN ('not_started', 'in_progress', 'waiting', 'ready_to_be_booked', 'done', 'n_a'))
+  `);
 }
 
 migrate()

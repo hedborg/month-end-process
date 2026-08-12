@@ -7,7 +7,11 @@ at-a-glance view across months.
 
 - One row per task, one column per recent month.
 - Colored pill = booking status for that task/month:
-  🔴 Not Started · 🟠 Waiting · 🟢 In Progress · 🟢 Done (darker) · ⚪ N/A
+  🔴 Not Started · 🟠 Waiting · 🟢 In Progress · 🟢 Ready to be Booked (medium)
+  · 🟢 Done (darkest) · ⚪ N/A
+- **Ready to be Booked** is for the Quality Check person to set — it tells
+  the Booking Responsible person "the numbers are in and checked, go ahead
+  and book it."
 - **Click a pill** to edit that task's full details without leaving the page.
 - **Click a month's header** (e.g. "2026-07") to open the full checklist for
   that month.

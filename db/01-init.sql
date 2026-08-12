@@ -32,9 +32,9 @@ CREATE TABLE tasks (
   url TEXT,
   powerbi_url TEXT,
   booking_status TEXT NOT NULL DEFAULT 'not_started'
-    CHECK (booking_status IN ('not_started', 'in_progress', 'waiting', 'done', 'n_a')),
+    CHECK (booking_status IN ('not_started', 'in_progress', 'waiting', 'ready_to_be_booked', 'done', 'n_a')),
   check_status TEXT NOT NULL DEFAULT 'not_started'
-    CHECK (check_status IN ('not_started', 'in_progress', 'waiting', 'done', 'n_a')),
+    CHECK (check_status IN ('not_started', 'in_progress', 'waiting', 'ready_to_be_booked', 'done', 'n_a')),
   date_finished DATE,
   comment TEXT,
   mg_comment TEXT,

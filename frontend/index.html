@@ -38,6 +38,7 @@
     --status-red: #b91c1c; --status-red-bg: #fee2e2;
     --status-orange: #c2410c; --status-orange-bg: #ffedd5;
     --status-lgreen: #4d7c0f; --status-lgreen-bg: #ecfccb;
+    --status-mgreen: #15803d; --status-mgreen-bg: #bbf7d0;
     --status-dgreen: #14532d; --status-dgreen-bg: #86efac;
     --status-grey: #6b7280; --status-grey-bg: #f1f5f9;
   }
@@ -65,6 +66,7 @@
     --status-red: #f87171; --status-red-bg: #4a1d1d;
     --status-orange: #fb923c; --status-orange-bg: #4a2a10;
     --status-lgreen: #a3e635; --status-lgreen-bg: #2c3a10;
+    --status-mgreen: #34d399; --status-mgreen-bg: #163a2c;
     --status-dgreen: #4ade80; --status-dgreen-bg: #123a22;
     --status-grey: #9aa4b2; --status-grey-bg: #262b34;
   }
@@ -130,6 +132,7 @@
   .status-not_started { background: var(--status-red-bg); color: var(--status-red); }
   .status-waiting { background: var(--status-orange-bg); color: var(--status-orange); }
   .status-in_progress { background: var(--status-lgreen-bg); color: var(--status-lgreen); }
+  .status-ready_to_be_booked { background: var(--status-mgreen-bg); color: var(--status-mgreen); }
   .status-done { background: var(--status-dgreen-bg); color: var(--status-dgreen); }
   .status-n_a { background: var(--status-grey-bg); color: var(--status-grey); }
 
@@ -332,6 +335,7 @@ const STATUS_OPTIONS = [
   ['not_started', 'Not Started'],
   ['in_progress', 'In Progress'],
   ['waiting', 'Waiting'],
+  ['ready_to_be_booked', 'Ready to be Booked'],
   ['done', 'Done'],
   ['n_a', 'N/A'],
 ];
