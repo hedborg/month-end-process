@@ -298,7 +298,7 @@ router.get('/report/pivot', asyncHandler(async (req, res) => {
        UNION ALL
        SELECT t.id, l.root_id FROM tasks t JOIN lineage l ON t.cloned_from_task_id = l.id
      )
-     SELECT t.id AS task_id, t.cycle_id, t.task_name, t.sort_order,
+     SELECT t.id AS task_id, t.cycle_id, t.task_name, t.sort_order, t.dependency_text,
             t.booking_status, t.date_finished,
             t.booking_responsible_id, t.quality_check_id, l.root_id
      FROM tasks t
@@ -308,12 +308,13 @@ router.get('/report/pivot', asyncHandler(async (req, res) => {
   );
 
   const byRoot = {};
-  // Process newest -> oldest so task_name/sort_order reflect the most recent occurrence.
+  // Process newest -> oldest so task_name/sort_order/dependency_text reflect the most recent occurrence.
   for (const cycle of [...cycles].reverse()) {
     for (const r of flat.filter((x) => x.cycle_id === cycle.id)) {
       if (!byRoot[r.root_id]) {
         byRoot[r.root_id] = {
-          root_id: r.root_id, task_name: r.task_name, sort_order: r.sort_order, cells: {},
+          root_id: r.root_id, task_name: r.task_name, sort_order: r.sort_order,
+          dependency_text: r.dependency_text, cells: {},
         };
       }
       byRoot[r.root_id].cells[cycle.id] = {

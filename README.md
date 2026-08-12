@@ -73,7 +73,9 @@ checklist. Click a task's status pill instead to open a quick-edit modal for
 just that task/month — every field (description, owners, both statuses,
 finished date, comment, links) editable without leaving the Overview, plus
 an "Open in Checklist" link if you need the full view (reordering, delete,
-adding a task, etc.).
+adding a task, etc.). If a task has a dependency set, it's shown as a small
+muted line under the task name (its most recent month's dependency, same as
+the task name itself).
 
 A "Filter by user" dropdown above the table narrows the rows to tasks where
 that person is either the Booking Responsible or the Quality Check on any of

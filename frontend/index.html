@@ -160,6 +160,7 @@
 
   .overview-cell { text-align: center; }
   .overview-date { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .overview-dependency { font-size: 11px; color: var(--text-faint); margin-top: 2px; }
   .status-pill {
     display: inline-block; font-weight: 600; font-size: 12px;
     border-radius: 999px; padding: 4px 10px;
@@ -537,7 +538,10 @@ function renderOverview() {
 
   document.getElementById('overviewBody').innerHTML = rows.map((r) => `
     <tr>
-      <td class="col-name">${escHtml(r.task_name)}</td>
+      <td class="col-name">
+        ${escHtml(r.task_name)}
+        ${r.dependency_text ? `<div class="overview-dependency">↳ ${escHtml(r.dependency_text)}</div>` : ''}
+      </td>
       ${overviewCycles.map((c) => {
         const cell = r.cells[c.id];
         if (!cell) return '<td class="overview-cell">—</td>';
