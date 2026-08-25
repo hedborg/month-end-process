@@ -76,7 +76,9 @@ async function migrate() {
   await pool.query(`
     DO $$ BEGIN
       ALTER TABLE users ADD CONSTRAINT users_name_key UNIQUE (name);
-    EXCEPTION WHEN duplicate_object THEN NULL;
+    EXCEPTION
+      WHEN duplicate_object THEN NULL; -- constraint already exists
+      WHEN duplicate_table THEN NULL;  -- its backing index already exists (actual error Postgres raises here)
     END $$;
   `);
 }
