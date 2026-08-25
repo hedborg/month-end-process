@@ -26,6 +26,9 @@ router.get('/users', asyncHandler(async (_req, res) => {
 router.post('/users', asyncHandler(async (req, res) => {
   const { name, email, password } = req.body;
   if (!name) return res.status(400).json({ error: 'name is required' });
+  if (password && password.length < 8) {
+    return res.status(400).json({ error: 'password must be at least 8 characters' });
+  }
   const passwordHash = password ? await bcrypt.hash(password, 12) : null;
   const { rows } = await pool.query(
     `INSERT INTO users (name, email, password_hash) VALUES ($1, $2, $3) RETURNING ${USER_COLUMNS}`,
@@ -36,6 +39,9 @@ router.post('/users', asyncHandler(async (req, res) => {
 
 router.patch('/users/:id', asyncHandler(async (req, res) => {
   const { name, email, active, password } = req.body;
+  if (password && password.length < 8) {
+    return res.status(400).json({ error: 'password must be at least 8 characters' });
+  }
   const passwordHash = password ? await bcrypt.hash(password, 12) : null;
   const { rows } = await pool.query(
     `UPDATE users SET
