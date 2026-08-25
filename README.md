@@ -137,15 +137,17 @@ in the UI drives this with a one-line confirmation.
 ## Production (DigitalOcean Droplet)
 
 The app runs on a DigitalOcean droplet via Docker Compose, following the same
-pattern as the `recon` tool:
+pattern as the `recon` tool. Production also runs Caddy, gated behind a
+Compose **profile** so local dev never tries to start it:
 
 ```bash
-cd /opt/month-end-process && git pull && docker compose up -d --build
+cd /opt/month-end-process && git pull && docker compose --profile production up -d --build
 ```
 
 **View logs:**
 ```bash
 docker compose logs -f app
+docker compose logs -f caddy
 ```
 
 **Check running containers:**
@@ -156,3 +158,22 @@ docker compose ps
 Host ports default to `3001` (app) and `5433` (postgres) instead of the more
 common `3000`/`5432`, so this can run on the same droplet as another
 Docker Compose app without a port clash.
+
+### HTTPS via Caddy
+
+`Caddyfile` points a domain (`mep.businesscontrol.se`) at the `app` service
+and Caddy handles TLS automatically via Let's Encrypt — no manual
+certificate management. It needs:
+- A DNS **A record** for that domain pointing at the droplet's IP.
+- Port **80** open broadly (Let's Encrypt's validation servers hit it from
+  their own infrastructure, not a fixed IP you can allowlist) and port
+  **443** open to whoever should reach the app — both on the cloud
+  firewall *and* `ufw` on the droplet itself.
+
+Once HTTPS is confirmed working end-to-end, two follow-ups:
+1. Set `COOKIE_SECURE=true` in the droplet's `.env` and redeploy — session
+   cookies should require HTTPS once it's actually available.
+2. Bind the app's port to loopback only (`"127.0.0.1:3001:3000"` in
+   `docker-compose.yml`), so the old plain-HTTP URL stops working entirely
+   and all traffic goes through Caddy. Do this *after* confirming the new
+   domain works, not before — doing it first cuts everyone off mid-transition.

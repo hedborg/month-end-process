@@ -40,5 +40,25 @@ services:
     volumes:
       - ./frontend:/app/public:ro
 
+  # Reverse proxy with automatic HTTPS (Let's Encrypt). Only used in
+  # production, behind a real domain — `docker compose up` (no profile flag)
+  # skips it entirely, so local dev is unaffected.
+  caddy:
+    image: caddy:2-alpine
+    container_name: monthend_caddy
+    restart: unless-stopped
+    profiles: ["production"]
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:
