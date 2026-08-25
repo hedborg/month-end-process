@@ -1,4 +1,5 @@
 const express = require('express');
+const bcrypt = require('bcryptjs');
 const pool = require('../db');
 
 const router = express.Router();
@@ -10,34 +11,40 @@ const asyncHandler = (fn) => (req, res) => fn(req, res).catch((err) => {
 
 const STATUS_VALUES = ['not_started', 'in_progress', 'waiting', 'ready_to_be_booked', 'done', 'n_a'];
 
+// Columns safe to send to the client — never password_hash.
+const USER_COLUMNS = 'id, name, email, active, created_at, (password_hash IS NOT NULL) AS has_password';
+
 // ---------------------------------------------------------------------------
 // Users
 // ---------------------------------------------------------------------------
 
 router.get('/users', asyncHandler(async (_req, res) => {
-  const { rows } = await pool.query('SELECT * FROM users ORDER BY name');
+  const { rows } = await pool.query(`SELECT ${USER_COLUMNS} FROM users ORDER BY name`);
   res.json(rows);
 }));
 
 router.post('/users', asyncHandler(async (req, res) => {
-  const { name, email } = req.body;
+  const { name, email, password } = req.body;
   if (!name) return res.status(400).json({ error: 'name is required' });
+  const passwordHash = password ? await bcrypt.hash(password, 12) : null;
   const { rows } = await pool.query(
-    'INSERT INTO users (name, email) VALUES ($1, $2) RETURNING *',
-    [name, email || null],
+    `INSERT INTO users (name, email, password_hash) VALUES ($1, $2, $3) RETURNING ${USER_COLUMNS}`,
+    [name, email || null, passwordHash],
   );
   res.status(201).json(rows[0]);
 }));
 
 router.patch('/users/:id', asyncHandler(async (req, res) => {
-  const { name, email, active } = req.body;
+  const { name, email, active, password } = req.body;
+  const passwordHash = password ? await bcrypt.hash(password, 12) : null;
   const { rows } = await pool.query(
     `UPDATE users SET
        name = COALESCE($1, name),
        email = COALESCE($2, email),
-       active = COALESCE($3, active)
-     WHERE id = $4 RETURNING *`,
-    [name, email, active, req.params.id],
+       active = COALESCE($3, active),
+       password_hash = COALESCE($4, password_hash)
+     WHERE id = $5 RETURNING ${USER_COLUMNS}`,
+    [name, email, active, passwordHash, req.params.id],
   );
   if (!rows.length) return res.status(404).json({ error: 'not found' });
   res.json(rows[0]);

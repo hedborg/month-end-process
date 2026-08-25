@@ -3,6 +3,14 @@
 A shared checklist for running the monthly accounting close, with an
 at-a-glance view across months.
 
+## Signing in
+
+Enter your first name and password. If you don't have a password yet, ask
+whoever administers the tool to set one for you in the **Users** modal —
+there's no self-service signup or "forgot password," on purpose, for a team
+this size. You stay signed in for 30 days; **Logout** (top right) ends that
+early if you're on a shared machine.
+
 ## Overview (the home page)
 
 - One row per task, one column per recent month.
@@ -49,7 +57,9 @@ earliest month and clone forward from there instead.
 
 ## Users
 
-**Users** button (top right) — add people or mark someone inactive.
+**Users** button (top right) — add people, mark someone inactive, or set/
+change a password for anyone on the list. Passwords are hashed; nobody,
+including whoever built this tool, can look up what a password actually is.
 
 ## Dark mode
 

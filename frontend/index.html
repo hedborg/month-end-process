@@ -151,6 +151,8 @@
   .modal .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
   .user-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
   .user-row span { flex: 1; }
+  .user-row input[type="password"] { width: 130px; flex: none; }
+  .no-password-tag { flex: none; font-size: 11px; color: var(--status-orange); white-space: nowrap; }
   .empty-state { padding: 40px; text-align: center; color: var(--text-faint); }
 
   .tab-btn {
@@ -177,10 +179,37 @@
   .cycle-link:hover { background: none; text-decoration: underline; }
 
   #themeToggleBtn { font-size: 16px; line-height: 1; padding: 6px 10px; }
+  .signed-in-as { font-size: 13px; color: var(--text-muted); }
+
+  .login-screen {
+    position: fixed; inset: 0; background: var(--bg);
+    display: flex; align-items: center; justify-content: center; z-index: 200;
+  }
+  .login-card { width: 320px; }
+  .login-error { color: var(--status-red); font-size: 13px; margin-top: -4px; margin-bottom: 12px; }
 </style>
 </head>
 <body>
 
+<div id="loginScreen" class="login-screen">
+  <div class="modal login-card">
+    <h2>Month-End Process</h2>
+    <div class="field">
+      <label>Name</label>
+      <input type="text" id="loginName" autocomplete="username">
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input type="password" id="loginPassword" autocomplete="current-password">
+    </div>
+    <div id="loginError" class="login-error" style="display:none"></div>
+    <div class="actions">
+      <button id="loginSubmitBtn">Sign in</button>
+    </div>
+  </div>
+</div>
+
+<div id="appShell" style="display:none">
 <header>
   <h1>Month-End Process</h1>
   <button class="tab-btn" id="tabOverviewBtn">Overview</button>
@@ -193,8 +222,10 @@
     <button class="secondary" id="cloneCycleBtn">Clone into new month</button>
   </div>
   <div class="spacer"></div>
+  <span id="signedInAs" class="signed-in-as"></span>
   <button class="secondary" id="manageUsersBtn">Users</button>
   <button class="secondary" id="themeToggleBtn" title="Toggle dark mode">🌙</button>
+  <button class="secondary" id="logoutBtn">Logout</button>
 </header>
 
 <main>
@@ -250,6 +281,8 @@
   </div>
   </div>
 </main>
+</div>
+<!-- /#appShell -->
 
 <!-- New / Clone cycle modal -->
 <div class="modal-backdrop" id="cycleModalBackdrop">
@@ -302,12 +335,16 @@
 
 <!-- Users modal -->
 <div class="modal-backdrop" id="usersModalBackdrop">
-  <div class="modal">
+  <div class="modal modal-wide">
     <h2>Users</h2>
     <div id="usersList"></div>
     <div class="field" style="margin-top:12px">
       <label>Add user</label>
       <input type="text" id="newUserName" placeholder="Full name">
+    </div>
+    <div class="field">
+      <label>Password (optional — can be set later)</label>
+      <input type="password" id="newUserPassword" placeholder="Password" autocomplete="new-password">
     </div>
     <div class="actions">
       <button class="secondary" id="usersModalClose">Close</button>
@@ -379,6 +416,10 @@ async function api(path, opts) {
     headers: { 'Content-Type': 'application/json' },
     ...opts,
   });
+  if (res.status === 401) {
+    showLoginScreen();
+    throw new Error('Not logged in');
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || res.statusText);
@@ -927,6 +968,9 @@ function renderUsersList() {
     <div class="user-row">
       <span>${escHtml(u.name)}</span>
       <label><input type="checkbox" data-user-active="${u.id}" ${u.active ? 'checked' : ''}> active</label>
+      ${u.has_password ? '' : '<span class="no-password-tag">no password set</span>'}
+      <input type="password" data-user-password-input="${u.id}" placeholder="New password" autocomplete="new-password">
+      <button class="secondary" data-user-set-password="${u.id}">Set password</button>
     </div>
   `).join('');
 }
@@ -944,10 +988,25 @@ document.getElementById('usersModalClose').addEventListener('click', async () =>
 
 document.getElementById('usersModalAdd').addEventListener('click', async () => {
   const nameEl = document.getElementById('newUserName');
+  const passwordEl = document.getElementById('newUserPassword');
   const name = nameEl.value.trim();
   if (!name) return;
-  await api('/users', { method: 'POST', body: JSON.stringify({ name }) });
+  await api('/users', { method: 'POST', body: JSON.stringify({ name, password: passwordEl.value || null }) });
   nameEl.value = '';
+  passwordEl.value = '';
+  await loadUsers();
+  renderUsersList();
+});
+
+document.getElementById('usersList').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-user-set-password]');
+  if (!btn) return;
+  const userId = btn.dataset.userSetPassword;
+  const input = document.querySelector(`[data-user-password-input="${userId}"]`);
+  const password = input.value;
+  if (!password) return alert('Enter a password first.');
+  if (password.length < 8) return alert('Password should be at least 8 characters.');
+  await api(`/users/${userId}`, { method: 'PATCH', body: JSON.stringify({ password }) });
   await loadUsers();
   renderUsersList();
 });
@@ -958,7 +1017,64 @@ document.getElementById('usersList').addEventListener('change', async (e) => {
   await api(`/users/${userId}`, { method: 'PATCH', body: JSON.stringify({ active: e.target.checked }) });
 });
 
-refreshAll();
+// ---- Auth gate ----
+
+let currentUser = null;
+
+function showLoginScreen() {
+  document.getElementById('appShell').style.display = 'none';
+  document.getElementById('loginScreen').style.display = 'flex';
+}
+
+function showAppShell() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appShell').style.display = '';
+}
+
+async function checkSessionAndInit() {
+  const res = await fetch('/api/session');
+  if (!res.ok) { showLoginScreen(); return; }
+  currentUser = await res.json();
+  document.getElementById('signedInAs').textContent = `Signed in as ${currentUser.name}`;
+  showAppShell();
+  await refreshAll();
+}
+
+async function doLogin() {
+  const name = document.getElementById('loginName').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const errorEl = document.getElementById('loginError');
+  errorEl.style.display = 'none';
+  if (!name || !password) return;
+
+  const res = await fetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, password }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    errorEl.textContent = body.error || 'Login failed';
+    errorEl.style.display = 'block';
+    return;
+  }
+  document.getElementById('loginPassword').value = '';
+  await checkSessionAndInit();
+}
+
+document.getElementById('loginSubmitBtn').addEventListener('click', doLogin);
+document.getElementById('loginName').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+document.getElementById('loginPassword').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+
+document.getElementById('logoutBtn').addEventListener('click', async () => {
+  await fetch('/api/logout', { method: 'POST' });
+  currentUser = null;
+  document.getElementById('loginName').value = '';
+  document.getElementById('loginPassword').value = '';
+  showLoginScreen();
+});
+
+checkSessionAndInit();
 </script>
 </body>
 </html>

@@ -2,8 +2,9 @@
 
 CREATE TABLE users (
   id SERIAL PRIMARY KEY,
-  name TEXT NOT NULL,
+  name TEXT NOT NULL UNIQUE, -- also the login identifier
   email TEXT,
+  password_hash TEXT, -- null until an admin sets a password for this person
   active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

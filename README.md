@@ -11,6 +11,29 @@ remembers the choice per browser (`localStorage`, not per-user).
 Using the app day-to-day? See [MANUAL.md](MANUAL.md) instead — this README
 is about running/deploying it.
 
+## Authentication
+
+The whole app (API and data — not the static HTML/JS shell itself) requires
+a login. Passwords are bcrypt-hashed (12 rounds), sessions are server-side
+(stored in Postgres via `connect-pg-simple`, not just a client-side flag),
+and login is rate-limited to 5 failed attempts per IP+name per 15 minutes.
+
+Before first use, create a `.env` file (gitignored, never commit it) next to
+`docker-compose.yml` with:
+```
+SESSION_SECRET=<a real random value, e.g. `openssl rand -hex 32`>
+COOKIE_SECURE=false
+```
+Use a **different** `SESSION_SECRET` per environment (local vs. production).
+Flip `COOKIE_SECURE` to `true` only once the app is served over HTTPS — left
+`true` on plain HTTP, the session cookie is silently never sent and login
+will appear to succeed but immediately bounce back to the login screen.
+
+New users start with no password set (`password_hash` is null) and can't
+log in until an admin sets one for them via the **Users** modal — there's no
+self-service signup or password reset, deliberately, for a team this size.
+Login is by first name (the `users.name` column, which is unique), not email.
+
 ## Quick start (Docker)
 
 ```bash
