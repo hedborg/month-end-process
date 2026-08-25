@@ -6,6 +6,10 @@ const pool = require('./db');
 const { router: authRouter, requireAuth } = require('./routes/auth');
 
 const app = express();
+// Trust exactly one hop (Caddy, on the same private Docker network) so
+// req.ip reflects the real client rather than the proxy's own address —
+// matters for the login rate limiter, which keys on IP.
+app.set('trust proxy', 1);
 app.use(express.json());
 app.use((req, _res, next) => { console.log(req.method, req.url); next(); });
 

@@ -170,10 +170,17 @@ certificate management. It needs:
   **443** open to whoever should reach the app — both on the cloud
   firewall *and* `ufw` on the droplet itself.
 
-Once HTTPS is confirmed working end-to-end, two follow-ups:
-1. Set `COOKIE_SECURE=true` in the droplet's `.env` and redeploy — session
-   cookies should require HTTPS once it's actually available.
-2. Bind the app's port to loopback only (`"127.0.0.1:3001:3000"` in
-   `docker-compose.yml`), so the old plain-HTTP URL stops working entirely
-   and all traffic goes through Caddy. Do this *after* confirming the new
-   domain works, not before — doing it first cuts everyone off mid-transition.
+Once HTTPS is confirmed working, three follow-ups apply (all done as soon as
+the domain was verified, not before — doing them first would cut everyone
+off mid-transition):
+1. `COOKIE_SECURE=true` in the droplet's `.env` — session cookies now
+   require HTTPS.
+2. The app's port is bound to loopback only (`"127.0.0.1:3001:3000"`), so
+   the old plain-HTTP URL no longer works at all — every request goes
+   through Caddy.
+3. `app.set('trust proxy', 1)` in `server.js` — Caddy is the only thing that
+   ever talks to the app directly, on the private Docker network, so `req.ip`
+   can safely trust the `X-Forwarded-For` header it sets. Without this the
+   login rate limiter would key on Caddy's address instead of the real
+   client's, rate-limiting by name alone for everyone going through the
+   domain rather than per-IP.
