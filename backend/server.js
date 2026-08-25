@@ -10,6 +10,7 @@ const app = express();
 // req.ip reflects the real client rather than the proxy's own address —
 // matters for the login rate limiter, which keys on IP.
 app.set('trust proxy', 1);
+app.disable('x-powered-by'); // don't advertise the framework to anyone probing
 app.use(express.json());
 app.use((req, _res, next) => { console.log(req.method, req.url); next(); });
 
