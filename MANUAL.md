@@ -17,6 +17,9 @@ at-a-glance view across months.
   that month.
 - **"Filter by user"** — pick a name to see only the tasks where that person
   is Booking Responsible or Quality Check. Your personal to-do list.
+- **"Hide completed"** — same idea as on the Checklist. A task only
+  disappears once it's Done/N/A in *every* month shown, so something
+  finished this month but still open from an earlier one stays visible.
 
 ## Checklist (full detail view)
 

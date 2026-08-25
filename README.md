@@ -88,6 +88,10 @@ that person is either the Booking Responsible or the Quality Check on any of
 the displayed months — a personal "what's on my plate" view, without hiding
 the other months for a matched task.
 
+"Hide completed" (same idea as on the Checklist) removes a row only once
+every displayed month for that task is `done`/`n_a` — a task that's wrapped
+up in the current month but still open in an earlier one stays visible.
+
 A task is matched across months by lineage, not by name: cloning a task sets
 its `cloned_from_task_id` back to the source task, and `GET
 /api/report/pivot` walks that chain (via a recursive CTE) to group every

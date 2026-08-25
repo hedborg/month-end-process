@@ -200,6 +200,7 @@
 <main>
   <div id="overviewPanel">
     <div class="toolbar">
+      <label><input type="checkbox" id="overviewHideCompleted"> Hide completed</label>
       <label>Filter by user (Booking Responsible or Quality Check)</label>
       <select id="overviewUserFilter"><option value="">All Users</option></select>
     </div>
@@ -524,14 +525,23 @@ async function loadOverview() {
   renderOverview();
 }
 
+function isOverviewRowComplete(row) {
+  const cellValues = Object.values(row.cells);
+  if (!cellValues.length) return false;
+  return cellValues.every((c) => c.booking_status === 'done' || c.booking_status === 'n_a');
+}
+
 function renderOverview() {
   const { cycles: overviewCycles, rows: allRows } = overviewData;
   const userFilter = document.getElementById('overviewUserFilter').value;
-  const rows = userFilter
-    ? allRows.filter((r) => Object.values(r.cells).some((c) => (
+  const hideCompleted = document.getElementById('overviewHideCompleted').checked;
+  const rows = allRows.filter((r) => {
+    if (hideCompleted && isOverviewRowComplete(r)) return false;
+    if (userFilter && !Object.values(r.cells).some((c) => (
       String(c.booking_responsible_id) === userFilter || String(c.quality_check_id) === userFilter
-    )))
-    : allRows;
+    ))) return false;
+    return true;
+  });
 
   document.getElementById('overviewEmptyState').style.display = overviewCycles.length ? 'none' : 'block';
   document.getElementById('overviewTableWrap').style.display = overviewCycles.length ? '' : 'none';
@@ -677,6 +687,7 @@ document.getElementById('tabOverviewBtn').addEventListener('click', async () => 
 document.getElementById('tabChecklistBtn').addEventListener('click', () => switchView('checklist'));
 
 document.getElementById('overviewUserFilter').addEventListener('change', renderOverview);
+document.getElementById('overviewHideCompleted').addEventListener('change', renderOverview);
 
 document.getElementById('overviewHeaderRow').addEventListener('click', async (e) => {
   const btn = e.target.closest('[data-cycle-id]');
