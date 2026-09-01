@@ -81,11 +81,16 @@ A task counts as complete when its booking status is `done`/`n_a` and — if a
 quality checker is assigned — the check status is also `done`/`n_a`. The
 "Hide completed" toggle in the UI filters on that.
 
-The toolbar also has dropdown filters for Booking Responsible, Booking
-Status, and Quality Check (each includes an "— Unassigned —" option), plus a
-"Clear filters" button. The Links column holds an editable field for both the
-task URL and the Power BI URL — a 🔗/📊 icon appears next to whichever ones
-are set so they stay clickable while still editable.
+The toolbar also has a "Filter by user" dropdown (matches whoever is Booking
+Responsible *or* Quality Check — one combined filter, not two separate ones)
+plus a Booking Status dropdown and a "Clear filters" button. A "Show my
+tasks" checkbox is tied to that dropdown as two views of the same state:
+checking it selects you; picking someone else (or "All Users") unchecks it.
+It defaults to checked/you on login, on both the Checklist and the Overview
+independently — each page remembers its own filter state, not a shared one.
+The Links column holds an editable field for both the task URL and the
+Power BI URL — a 🔗/📊 icon appears next to whichever ones are set so they
+stay clickable while still editable.
 
 Dependency is a text field backed by a `<datalist>` of the current cycle's
 task names — click in and pick one, or keep typing free text. It stays free
@@ -109,7 +114,8 @@ the task name itself).
 A "Filter by user" dropdown above the table narrows the rows to tasks where
 that person is either the Booking Responsible or the Quality Check on any of
 the displayed months — a personal "what's on my plate" view, without hiding
-the other months for a matched task.
+the other months for a matched task. The "Show my tasks" checkbox next to it
+is just that filter pre-set to you; it's checked by default on login.
 
 "Hide completed" (same idea as on the Checklist) removes a row only once
 every displayed month for that task is `done`/`n_a` — a task that's wrapped

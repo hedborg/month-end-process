@@ -23,8 +23,10 @@ early if you're on a shared machine.
 - **Click a pill** to edit that task's full details without leaving the page.
 - **Click a month's header** (e.g. "2026-07") to open the full checklist for
   that month.
-- **"Filter by user"** — pick a name to see only the tasks where that person
-  is Booking Responsible or Quality Check. Your personal to-do list.
+- **"Show my tasks"** — checked by default when you log in, showing only
+  tasks where you're Booking Responsible or Quality Check. Uncheck it (or
+  the "Filter by user" dropdown next to it, which is the same thing) to see
+  everyone's.
 - **"Hide completed"** — same idea as on the Checklist. A task only
   disappears once it's Done/N/A in *every* month shown, so something
   finished this month but still open from an earlier one stays visible.
@@ -36,8 +38,8 @@ early if you're on a shared machine.
 - Two independent statuses per task: **Booking Status** (doing the work) and
   **Check Status** (reviewing it).
 - Drag the `⠿` handle to reorder tasks.
-- **Hide completed**, plus dropdown filters for Booking Responsible, Booking
-  Status, and Quality Check, to narrow a long list.
+- **Hide completed** and **Show my tasks** (same as on the Overview,
+  checked by default), plus a Booking Status dropdown, to narrow a long list.
 - **+ Add Task** for something new this month.
 - **Dependency** — click in for a dropdown of this month's task names, or
   type your own text (e.g. "All the above").

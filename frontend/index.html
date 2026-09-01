@@ -232,6 +232,7 @@
   <div id="overviewPanel">
     <div class="toolbar">
       <label><input type="checkbox" id="overviewHideCompleted"> Hide completed</label>
+      <label><input type="checkbox" id="overviewMyTasksOnly"> Show my tasks</label>
       <label>Filter by user (Booking Responsible or Quality Check)</label>
       <select id="overviewUserFilter"><option value="">All Users</option></select>
     </div>
@@ -247,9 +248,10 @@
   <div id="checklistPanel" style="display:none">
   <div class="toolbar">
     <label><input type="checkbox" id="hideCompleted"> Hide completed</label>
-    <select id="filterBookingResp"></select>
+    <label><input type="checkbox" id="checklistMyTasksOnly"> Show my tasks</label>
+    <label>Filter by user (Booking Responsible or Quality Check)</label>
+    <select id="checklistUserFilter"><option value="">All Users</option></select>
     <select id="filterBookingStatus"></select>
-    <select id="filterQualityCheck"></select>
     <button class="secondary" id="clearFiltersBtn">Clear filters</button>
     <div class="spacer"></div>
     <button id="addTaskBtn">+ Add Task</button>
@@ -468,18 +470,14 @@ function renderCycleStatus() {
 
 function renderTasks() {
   const hideCompleted = document.getElementById('hideCompleted').checked;
-  const respFilter = document.getElementById('filterBookingResp').value;
+  const userFilter = document.getElementById('checklistUserFilter').value;
   const statusFilter = document.getElementById('filterBookingStatus').value;
-  const qcFilter = document.getElementById('filterQualityCheck').value;
   const body = document.getElementById('taskBody');
 
   const visible = tasks.filter((t) => {
     if (hideCompleted && isComplete(t)) return false;
-    if (respFilter === 'unassigned' && t.booking_responsible_id) return false;
-    if (respFilter && respFilter !== 'unassigned' && String(t.booking_responsible_id) !== respFilter) return false;
+    if (userFilter && String(t.booking_responsible_id) !== userFilter && String(t.quality_check_id) !== userFilter) return false;
     if (statusFilter && t.booking_status !== statusFilter) return false;
-    if (qcFilter === 'unassigned' && t.quality_check_id) return false;
-    if (qcFilter && qcFilter !== 'unassigned' && String(t.quality_check_id) !== qcFilter) return false;
     return true;
   });
 
@@ -519,24 +517,20 @@ function renderTasks() {
 }
 
 function renderFilterOptions() {
-  const respSel = document.getElementById('filterBookingResp');
-  const qcSel = document.getElementById('filterQualityCheck');
+  const checklistUserSel = document.getElementById('checklistUserFilter');
   const statusSel = document.getElementById('filterBookingStatus');
   const overviewUserSel = document.getElementById('overviewUserFilter');
-  const prevResp = respSel.value, prevQc = qcSel.value, prevStatus = statusSel.value;
+  const prevChecklistUser = checklistUserSel.value, prevStatus = statusSel.value;
   const prevOverviewUser = overviewUserSel.value;
 
   const plainUserOptionsHtml = users.map((u) => `<option value="${u.id}">${escHtml(u.name)}</option>`).join('');
-  const userOptionsHtml = plainUserOptionsHtml + '<option value="unassigned">— Unassigned —</option>';
 
-  respSel.innerHTML = `<option value="">All Booking Responsible</option>${userOptionsHtml}`;
-  qcSel.innerHTML = `<option value="">All Quality Check</option>${userOptionsHtml}`;
+  checklistUserSel.innerHTML = `<option value="">All Users</option>${plainUserOptionsHtml}`;
   statusSel.innerHTML = '<option value="">All Booking Status</option>'
     + STATUS_OPTIONS.map(([v, label]) => `<option value="${v}">${label}</option>`).join('');
   overviewUserSel.innerHTML = `<option value="">All Users</option>${plainUserOptionsHtml}`;
 
-  respSel.value = prevResp;
-  qcSel.value = prevQc;
+  checklistUserSel.value = prevChecklistUser;
   statusSel.value = prevStatus;
   overviewUserSel.value = prevOverviewUser;
 }
@@ -697,10 +691,40 @@ async function openTaskDetail(taskId, cycleId) {
 
 async function refreshAll() {
   await loadUsers();
+  applyDefaultMyTasksFilter();
   await loadCycles();
   await loadTasks();
   switchView('overview');
   await loadOverview();
+}
+
+// Defaults both pages to "my tasks only" right after login, once the user
+// dropdowns are populated (loadUsers) but before the first render reads
+// their value. Only runs once, at initial load — never resets a filter the
+// user has since changed on purpose.
+function applyDefaultMyTasksFilter() {
+  if (!currentUser) return;
+  document.getElementById('overviewMyTasksOnly').checked = true;
+  document.getElementById('overviewUserFilter').value = String(currentUser.id);
+  document.getElementById('checklistMyTasksOnly').checked = true;
+  document.getElementById('checklistUserFilter').value = String(currentUser.id);
+}
+
+// Keeps a "Show my tasks" checkbox and its user-filter <select> as two views
+// of the same state: checking it selects "me"; picking someone else (or
+// "All Users") in the dropdown unchecks it.
+function wireMyTasksToggle(checkboxId, selectId, renderFn) {
+  const checkbox = document.getElementById(checkboxId);
+  const select = document.getElementById(selectId);
+
+  checkbox.addEventListener('change', () => {
+    select.value = checkbox.checked && currentUser ? String(currentUser.id) : '';
+    renderFn();
+  });
+
+  select.addEventListener('change', () => {
+    checkbox.checked = !!currentUser && select.value === String(currentUser.id);
+  });
 }
 
 // ---- Theme toggle (light default, dark opt-in, remembered) ----
@@ -729,6 +753,7 @@ document.getElementById('tabChecklistBtn').addEventListener('click', () => switc
 
 document.getElementById('overviewUserFilter').addEventListener('change', renderOverview);
 document.getElementById('overviewHideCompleted').addEventListener('change', renderOverview);
+wireMyTasksToggle('overviewMyTasksOnly', 'overviewUserFilter', renderOverview);
 
 document.getElementById('overviewHeaderRow').addEventListener('click', async (e) => {
   const btn = e.target.closest('[data-cycle-id]');
@@ -795,14 +820,15 @@ document.getElementById('cycleStatusSelect').addEventListener('change', async (e
 
 document.getElementById('hideCompleted').addEventListener('change', renderTasks);
 
-['filterBookingResp', 'filterBookingStatus', 'filterQualityCheck'].forEach((id) => {
+['checklistUserFilter', 'filterBookingStatus'].forEach((id) => {
   document.getElementById(id).addEventListener('change', renderTasks);
 });
+wireMyTasksToggle('checklistMyTasksOnly', 'checklistUserFilter', renderTasks);
 
 document.getElementById('clearFiltersBtn').addEventListener('click', () => {
-  document.getElementById('filterBookingResp').value = '';
+  document.getElementById('checklistUserFilter').value = '';
+  document.getElementById('checklistMyTasksOnly').checked = false;
   document.getElementById('filterBookingStatus').value = '';
-  document.getElementById('filterQualityCheck').value = '';
   renderTasks();
 });
 
