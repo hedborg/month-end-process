@@ -80,7 +80,7 @@ function renderLoginPage(res, { client, params, error }) {
       <label>Password</label>
       <input type="password" name="password" required>
       ${error ? `<div class="error">${escapeHtml(error)}</div>` : ''}
-      <button class="primary" type="submit">Log in</button>
+      <button class="primary" type="submit">Log in &amp; allow access</button>
     </form>
   `));
 }
@@ -145,6 +145,15 @@ function createOAuthProvider(pool) {
     // Renders our own login + consent HTML rather than redirecting to a
     // separate authorization server — this server IS the authorization
     // server, reusing the same users/password_hash table as the main app.
+    //
+    // One interactive step, not two: logging in via this specific
+    // /authorize link already implies consent for this specific client's
+    // request, so a fresh login goes straight from credentials to the
+    // redirect — no separate "Allow" click after. A second click only
+    // happens for an *already*-logged-in session (via an existing app
+    // cookie), where the login step is skipped but an explicit consent
+    // click still guards against a stale session being silently reused by
+    // a link to a client the user never intended to authorize.
     async authorize(client, params, res) {
       const req = res.req;
       const action = req.method === 'POST' ? req.body.mep_action : undefined;
@@ -156,31 +165,14 @@ function createOAuthProvider(pool) {
       if (action === 'login') {
         const result = await attemptLogin(req);
         if (!result.ok) return renderLoginPage(res, { client, params, error: result.error });
-        return renderConsentPage(res, { client, params, user: result.user });
+        return issueCodeAndRedirect(pool, client, params, result.user.id, res);
       }
 
       if (action === 'approve') {
         if (!req.session || !req.session.userId) {
           return renderLoginPage(res, { client, params, error: 'Your session expired — please log in again.' });
         }
-        const code = randomToken();
-        await pool.query(
-          `INSERT INTO oauth_auth_codes (code_hash, client_id, user_id, redirect_uri, code_challenge, scope, resource, expires_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, now() + interval '${AUTH_CODE_TTL_SECONDS} seconds')`,
-          [
-            hash(code),
-            client.client_id,
-            req.session.userId,
-            params.redirectUri,
-            params.codeChallenge,
-            params.scopes && params.scopes.length ? params.scopes.join(' ') : null,
-            params.resource ? params.resource.href : null,
-          ],
-        );
-        const redirectUrl = new URL(params.redirectUri);
-        redirectUrl.searchParams.set('code', code);
-        if (params.state) redirectUrl.searchParams.set('state', params.state);
-        return res.redirect(302, redirectUrl.href);
+        return issueCodeAndRedirect(pool, client, params, req.session.userId, res);
       }
 
       // GET (or an unrecognized POST): show consent if already logged in
@@ -264,6 +256,27 @@ function createOAuthProvider(pool) {
       );
     },
   };
+}
+
+async function issueCodeAndRedirect(pool, client, params, userId, res) {
+  const code = randomToken();
+  await pool.query(
+    `INSERT INTO oauth_auth_codes (code_hash, client_id, user_id, redirect_uri, code_challenge, scope, resource, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, now() + interval '${AUTH_CODE_TTL_SECONDS} seconds')`,
+    [
+      hash(code),
+      client.client_id,
+      userId,
+      params.redirectUri,
+      params.codeChallenge,
+      params.scopes && params.scopes.length ? params.scopes.join(' ') : null,
+      params.resource ? params.resource.href : null,
+    ],
+  );
+  const redirectUrl = new URL(params.redirectUri);
+  redirectUrl.searchParams.set('code', code);
+  if (params.state) redirectUrl.searchParams.set('state', params.state);
+  res.redirect(302, redirectUrl.href);
 }
 
 async function issueTokenPair(pool, clientId, userId, scope, resource) {
