@@ -63,6 +63,15 @@ app.use(mcpAuthRouter({
   resourceName: 'Month-End Process',
 }));
 
+// Exempt icon lookups from the /mcp bearer-auth requirement: some MCP
+// clients probe for a favicon relative to the connector URL itself
+// (/mcp/favicon.ico) rather than the site root, and app.use('/mcp', ...)
+// below matches that whole sub-path — without this it 401s and the client
+// falls back to a generic default icon instead of ours.
+app.get(['/mcp/favicon.ico', '/mcp/favicon.png', '/mcp/apple-touch-icon.png'], (req, res) => {
+  res.sendFile(path.join(publicDir, path.basename(req.path)));
+});
+
 // /mcp — accepts either an OAuth access token (web/Desktop/Cowork, via the
 // router above) or a static personal API token (Claude Code), see
 // routes/mcp.js.
