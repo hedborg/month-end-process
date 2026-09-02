@@ -34,13 +34,16 @@ function recordFailure(key) {
   }
 }
 
-router.post('/login', async (req, res) => {
+// Core login check, shared by the JSON /login endpoint and the OAuth
+// authorize page's login form — both check the same users table and the
+// same rate limiter, they just render the result differently.
+async function attemptLogin(req) {
   const { name, password } = req.body;
-  if (!name || !password) return res.status(400).json({ error: 'name and password are required' });
+  if (!name || !password) return { ok: false, status: 400, error: 'name and password are required' };
 
   const key = rateLimitKey(req);
   if (isLockedOut(key)) {
-    return res.status(429).json({ error: 'Too many failed attempts. Try again in 15 minutes.' });
+    return { ok: false, status: 429, error: 'Too many failed attempts. Try again in 15 minutes.' };
   }
 
   try {
@@ -52,25 +55,33 @@ router.post('/login', async (req, res) => {
 
     if (!user || !user.active || !user.password_hash) {
       recordFailure(key);
-      return res.status(401).json({ error: 'Invalid name or password' });
+      return { ok: false, status: 401, error: 'Invalid name or password' };
     }
 
     const match = await bcrypt.compare(password, user.password_hash);
     if (!match) {
       recordFailure(key);
-      return res.status(401).json({ error: 'Invalid name or password' });
+      return { ok: false, status: 401, error: 'Invalid name or password' };
     }
 
     failureLog.delete(key);
-    req.session.regenerate((err) => {
-      if (err) { console.error(err); return res.status(500).json({ error: 'Login failed' }); }
-      req.session.userId = user.id;
-      res.json({ id: user.id, name: user.name });
+    return await new Promise((resolve) => {
+      req.session.regenerate((err) => {
+        if (err) { console.error(err); return resolve({ ok: false, status: 500, error: 'Login failed' }); }
+        req.session.userId = user.id;
+        resolve({ ok: true, user: { id: user.id, name: user.name } });
+      });
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Login failed' });
+    return { ok: false, status: 500, error: 'Login failed' };
   }
+}
+
+router.post('/login', async (req, res) => {
+  const result = await attemptLogin(req);
+  if (!result.ok) return res.status(result.status).json({ error: result.error });
+  res.json(result.user);
 });
 
 router.post('/logout', (req, res) => {
@@ -93,4 +104,4 @@ function requireAuth(req, res, next) {
   next();
 }
 
-module.exports = { router, requireAuth };
+module.exports = { router, requireAuth, attemptLogin };

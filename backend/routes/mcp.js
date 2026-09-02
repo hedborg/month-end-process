@@ -2,6 +2,7 @@ const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
 const { requireBearerAuth } = require('@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js');
 const { InvalidTokenError } = require('@modelcontextprotocol/sdk/server/auth/errors.js');
+const { getOAuthProtectedResourceMetadataUrl } = require('@modelcontextprotocol/sdk/server/auth/router.js');
 const z = require('zod');
 const { findUserByToken } = require('../lib/apiTokens');
 const { cloneCycleForward } = require('../lib/cycles');
@@ -10,12 +11,19 @@ const { getPivot } = require('../lib/pivot');
 const STATUS_VALUES = ['not_started', 'in_progress', 'waiting', 'ready_to_be_booked', 'done', 'n_a'];
 const STATUS_ENUM = z.enum(STATUS_VALUES);
 
-// Bridges the SDK's OAuth-shaped token verifier interface to our plain
-// personal API tokens — there's no OAuth flow here, just "is this token
-// valid, and whose is it."
-function makeVerifier(pool) {
+// Accepts either a short-lived OAuth access token (Claude web/Desktop/
+// Cowork, issued via lib/oauth.js) or a long-lived static personal API
+// token (Claude Code, see lib/apiTokens.js) — both end up identifying the
+// same kind of principal (a user id + name), so every MCP tool below only
+// ever has to deal with one shape (extra.userId / extra.name).
+function makeVerifier(pool, oauthProvider) {
   return {
     async verifyAccessToken(token) {
+      try {
+        return await oauthProvider.verifyAccessToken(token);
+      } catch {
+        // Not a valid OAuth token — fall back to the static token table.
+      }
       const user = await findUserByToken(pool, token);
       if (!user) throw new InvalidTokenError('Invalid or revoked token');
       return {
@@ -151,8 +159,11 @@ function getServer(pool) {
 // Mounts the MCP endpoint on an existing Express app. Stateless mode: a
 // fresh McpServer + transport per request, matching the SDK's own
 // recommended pattern for simple API-style servers (no session tracking).
-function mountMcp(app, pool) {
-  app.use('/mcp', requireBearerAuth({ verifier: makeVerifier(pool) }));
+function mountMcp(app, pool, { oauthProvider, mcpResourceUrl }) {
+  app.use('/mcp', requireBearerAuth({
+    verifier: makeVerifier(pool, oauthProvider),
+    resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(mcpResourceUrl),
+  }));
 
   app.post('/mcp', async (req, res) => {
     try {

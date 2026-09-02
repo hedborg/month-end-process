@@ -23,7 +23,13 @@ Before first use, create a `.env` file (gitignored, never commit it) next to
 ```
 SESSION_SECRET=<a real random value, e.g. `openssl rand -hex 32`>
 COOKIE_SECURE=false
+PUBLIC_URL=http://localhost:3001
 ```
+`PUBLIC_URL` is this app's externally-reachable URL — it's the OAuth issuer
+identity and the base every `/authorize` and `/token` link is built from
+(see MCP server, below). In production it must be the real HTTPS domain
+(`PUBLIC_URL=https://mep.businesscontrol.se`); getting it wrong doesn't
+break the rest of the app, only OAuth-based MCP connections.
 Use a **different** `SESSION_SECRET` per environment (local vs. production).
 Flip `COOKIE_SECURE` to `true` only once the app is served over HTTPS — left
 `true` on plain HTTP, the session cookie is silently never sent and login
@@ -45,25 +51,35 @@ MCP-capable client can add it by URL — your own Claude Code, a shared
 "company Claude" connector, another agent — without installing anything
 locally.
 
-Auth is separate from the session-cookie login: each person gets their own
-long-lived API token (`Authorization: Bearer mep_...`), generated from the
-**Users** modal ("Generate API token" — shown once, only its SHA-256 hash is
-stored). Tool calls run as that person, e.g. `get_my_tasks` uses the token
-owner's identity, not a shared service account — same accountability
-principle as individual passwords. Revoking or regenerating a token
-invalidates the old one immediately.
+Two independent ways to authenticate, both ending up at the same tool calls
+running as a specific person — pick whichever fits the client:
 
-To add it to Claude Code (check `claude mcp add --help` for the exact current
-flags — this is current as of Claude Code's MCP support for remote HTTP
-servers, but CLI flags do change between versions):
+**Personal API tokens** (Claude Code): each person generates their own
+long-lived token (`Authorization: Bearer mep_...`) from the **Users** modal
+("Generate API token" — shown once, only its SHA-256 hash is stored).
+Revoking or regenerating invalidates the old one immediately.
 ```
 claude mcp add --transport http month-end https://mep.businesscontrol.se/mcp \
   --header "Authorization: Bearer <your token>"
 ```
-For a shared org-wide connector (company Claude, another agent), the same
-URL + a per-person token is whatever that platform's "add a custom MCP
-connector" flow asks for — there's nothing month-end-process-specific about
-the shape.
+(No literal `<` `>` — replace the whole placeholder with the raw token.)
+
+**OAuth 2.0** (Claude web, Desktop, Cowork, or any custom connector that
+doesn't have a way to attach a static header): this app *is* the
+authorization server (`lib/oauth.js`) — there's no separate identity
+provider. Adding the connector opens a normal browser login (the same
+name/password as the app itself) followed by a one-time "Allow this app to
+access Month-End Process?" consent screen; the client then holds a
+short-lived access token plus a refresh token, rotated automatically, no
+copy-pasting required. In the client's "Add custom connector" UI, the only
+thing to supply is the server URL — `https://mep.businesscontrol.se/mcp` —
+discovery of the `/authorize` and `/token` endpoints is automatic via
+`/.well-known/oauth-authorization-server`.
+
+Either way, tool calls run as whoever authenticated — e.g. `get_my_tasks`
+uses that identity, not a shared service account — same accountability
+principle as individual passwords. `PUBLIC_URL` (see below) must be set
+correctly in production for OAuth's issuer/redirect URLs to resolve.
 
 ## Quick start (Docker)
 

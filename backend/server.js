@@ -2,9 +2,11 @@ const express = require('express');
 const path = require('path');
 const session = require('express-session');
 const pgSessionStore = require('connect-pg-simple')(session);
+const { mcpAuthRouter } = require('@modelcontextprotocol/sdk/server/auth/router.js');
 const pool = require('./db');
 const { router: authRouter, requireAuth } = require('./routes/auth');
 const { mountMcp } = require('./routes/mcp');
+const { createOAuthProvider } = require('./lib/oauth');
 
 const app = express();
 // Trust exactly one hop (Caddy, on the same private Docker network) so
@@ -39,9 +41,32 @@ app.use(express.static(publicDir));
 app.use('/api', authRouter); // /api/login, /api/logout, /api/session — no auth required
 app.use('/api', requireAuth, require('./routes/api')); // everything else requires a session
 
-mountMcp(app, pool); // /mcp — Bearer-token auth (personal API tokens), separate from session cookies
-
 const PORT = process.env.PORT || 3000;
+// The public HTTPS URL this app is reachable at — required for OAuth (the
+// issuer identity clients discover, and where they're sent to authorize).
+// Falls back to plain localhost for local dev, where the SDK's issuer check
+// exempts localhost from the HTTPS requirement.
+const publicUrl = new URL(process.env.PUBLIC_URL || `http://localhost:${PORT}`);
+const mcpResourceUrl = new URL('/mcp', publicUrl);
+
+// Turns this app into its own OAuth 2.0 authorization server (login +
+// consent screen reusing the existing users table), so custom connectors —
+// Claude web, Desktop, Cowork — can add /mcp by URL and do a normal browser
+// sign-in instead of needing a copy-pasted personal token. Mounted at the
+// app root per the SDK's requirement; installs /authorize, /token,
+// /register, /revoke, and the /.well-known metadata endpoints.
+const oauthProvider = createOAuthProvider(pool);
+app.use(mcpAuthRouter({
+  provider: oauthProvider,
+  issuerUrl: publicUrl,
+  resourceServerUrl: mcpResourceUrl,
+  resourceName: 'Month-End Process',
+}));
+
+// /mcp — accepts either an OAuth access token (web/Desktop/Cowork, via the
+// router above) or a static personal API token (Claude Code), see
+// routes/mcp.js.
+mountMcp(app, pool, { oauthProvider, mcpResourceUrl });
 
 // ---------------------------------------------------------------------------
 // Migrations — run on every startup, idempotent
@@ -98,6 +123,53 @@ async function migrate() {
       WHEN duplicate_table THEN NULL;
     END $$;
   `);
+
+  // M5: OAuth 2.0 authorization server tables, for custom connectors
+  // (Claude web/Desktop/Cowork) — see lib/oauth.js.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS oauth_clients (
+      client_id TEXT PRIMARY KEY,
+      client_secret TEXT,
+      client_secret_expires_at BIGINT,
+      redirect_uris JSONB NOT NULL,
+      client_name TEXT,
+      token_endpoint_auth_method TEXT NOT NULL DEFAULT 'none',
+      grant_types JSONB,
+      response_types JSONB,
+      scope TEXT,
+      client_id_issued_at BIGINT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS oauth_auth_codes (
+      code_hash TEXT PRIMARY KEY,
+      client_id TEXT NOT NULL REFERENCES oauth_clients(client_id) ON DELETE CASCADE,
+      user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      redirect_uri TEXT NOT NULL,
+      code_challenge TEXT NOT NULL,
+      scope TEXT,
+      resource TEXT,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used BOOLEAN NOT NULL DEFAULT false,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS oauth_tokens (
+      token_hash TEXT PRIMARY KEY,
+      token_type TEXT NOT NULL CHECK (token_type IN ('access', 'refresh')),
+      client_id TEXT NOT NULL REFERENCES oauth_clients(client_id) ON DELETE CASCADE,
+      user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      scope TEXT,
+      paired_token_hash TEXT,
+      expires_at TIMESTAMPTZ,
+      revoked BOOLEAN NOT NULL DEFAULT false,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user ON oauth_tokens(user_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_oauth_auth_codes_expires ON oauth_auth_codes(expires_at)`);
 }
 
 migrate()
