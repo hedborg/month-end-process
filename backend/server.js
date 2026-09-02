@@ -4,6 +4,7 @@ const session = require('express-session');
 const pgSessionStore = require('connect-pg-simple')(session);
 const pool = require('./db');
 const { router: authRouter, requireAuth } = require('./routes/auth');
+const { mountMcp } = require('./routes/mcp');
 
 const app = express();
 // Trust exactly one hop (Caddy, on the same private Docker network) so
@@ -37,6 +38,8 @@ app.use(express.static(publicDir));
 
 app.use('/api', authRouter); // /api/login, /api/logout, /api/session — no auth required
 app.use('/api', requireAuth, require('./routes/api')); // everything else requires a session
+
+mountMcp(app, pool); // /mcp — Bearer-token auth (personal API tokens), separate from session cookies
 
 const PORT = process.env.PORT || 3000;
 
@@ -80,6 +83,19 @@ async function migrate() {
     EXCEPTION
       WHEN duplicate_object THEN NULL; -- constraint already exists
       WHEN duplicate_table THEN NULL;  -- its backing index already exists (actual error Postgres raises here)
+    END $$;
+  `);
+
+  // M4: personal API tokens for MCP access. Store only a SHA-256 hash (fast
+  // to check, unlike bcrypt) since a 256-bit random token needs no
+  // brute-force protection the way a human-chosen password does.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS api_token_hash TEXT`);
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE users ADD CONSTRAINT users_api_token_hash_key UNIQUE (api_token_hash);
+    EXCEPTION
+      WHEN duplicate_object THEN NULL;
+      WHEN duplicate_table THEN NULL;
     END $$;
   `);
 }

@@ -34,6 +34,37 @@ log in until an admin sets one for them via the **Users** modal — there's no
 self-service signup or password reset, deliberately, for a team this size.
 Login is by first name (the `users.name` column, which is unique), not email.
 
+## MCP server
+
+`POST /mcp` (mounted on the same app, same domain, same TLS — no separate
+service or subdomain) exposes the checklist as MCP tools: `list_cycles`,
+`get_overview`, `get_my_tasks`, `list_tasks`, `update_task`, `clone_cycle`.
+It's a **remote** MCP server (Streamable HTTP transport, stateless — a fresh
+`McpServer` + transport per request), not a local/stdio one, so any
+MCP-capable client can add it by URL — your own Claude Code, a shared
+"company Claude" connector, another agent — without installing anything
+locally.
+
+Auth is separate from the session-cookie login: each person gets their own
+long-lived API token (`Authorization: Bearer mep_...`), generated from the
+**Users** modal ("Generate API token" — shown once, only its SHA-256 hash is
+stored). Tool calls run as that person, e.g. `get_my_tasks` uses the token
+owner's identity, not a shared service account — same accountability
+principle as individual passwords. Revoking or regenerating a token
+invalidates the old one immediately.
+
+To add it to Claude Code (check `claude mcp add --help` for the exact current
+flags — this is current as of Claude Code's MCP support for remote HTTP
+servers, but CLI flags do change between versions):
+```
+claude mcp add --transport http month-end https://mep.businesscontrol.se/mcp \
+  --header "Authorization: Bearer <your token>"
+```
+For a shared org-wide connector (company Claude, another agent), the same
+URL + a per-person token is whatever that platform's "add a custom MCP
+connector" flow asks for — there's nothing month-end-process-specific about
+the shape.
+
 ## Quick start (Docker)
 
 ```bash

@@ -1,6 +1,10 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const pool = require('../db');
+const { cloneCycleForward } = require('../lib/cycles');
+const { hashToken } = require('../lib/apiTokens');
+const { getPivot } = require('../lib/pivot');
 
 const router = express.Router();
 
@@ -12,7 +16,9 @@ const asyncHandler = (fn) => (req, res) => fn(req, res).catch((err) => {
 const STATUS_VALUES = ['not_started', 'in_progress', 'waiting', 'ready_to_be_booked', 'done', 'n_a'];
 
 // Columns safe to send to the client — never password_hash.
-const USER_COLUMNS = 'id, name, email, active, created_at, (password_hash IS NOT NULL) AS has_password';
+const USER_COLUMNS = `id, name, email, active, created_at,
+  (password_hash IS NOT NULL) AS has_password,
+  (api_token_hash IS NOT NULL) AS has_api_token`;
 
 // ---------------------------------------------------------------------------
 // Users
@@ -54,6 +60,28 @@ router.patch('/users/:id', asyncHandler(async (req, res) => {
   );
   if (!rows.length) return res.status(404).json({ error: 'not found' });
   res.json(rows[0]);
+}));
+
+// Issues a new personal API token for MCP access, replacing any existing
+// one. The raw token is returned exactly once here — only its hash is ever
+// stored, so it can't be recovered again after this response.
+router.post('/users/:id/token', asyncHandler(async (req, res) => {
+  const rawToken = `mep_${crypto.randomBytes(32).toString('hex')}`;
+  const { rows } = await pool.query(
+    'UPDATE users SET api_token_hash = $1 WHERE id = $2 RETURNING id',
+    [hashToken(rawToken), req.params.id],
+  );
+  if (!rows.length) return res.status(404).json({ error: 'not found' });
+  res.json({ token: rawToken });
+}));
+
+router.delete('/users/:id/token', asyncHandler(async (req, res) => {
+  const { rows } = await pool.query(
+    'UPDATE users SET api_token_hash = NULL WHERE id = $1 RETURNING id',
+    [req.params.id],
+  );
+  if (!rows.length) return res.status(404).json({ error: 'not found' });
+  res.status(204).end();
 }));
 
 // ---------------------------------------------------------------------------
@@ -105,61 +133,9 @@ router.delete('/cycles/:id', asyncHandler(async (req, res) => {
 // resetting progress and comments so the new month starts clean. Tasks that
 // were N/A stay N/A — everything else resets to not_started.
 router.post('/cycles/:id/clone', asyncHandler(async (req, res) => {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-
-    const { rows: sourceRows } = await client.query(
-      'SELECT year, month FROM cycles WHERE id = $1',
-      [req.params.id],
-    );
-    if (!sourceRows.length) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ error: 'source cycle not found' });
-    }
-
-    let { year, month } = sourceRows[0];
-    month += 1;
-    if (month > 12) { month = 1; year += 1; }
-    const label = `${year}-${String(month).padStart(2, '0')}`;
-
-    const { rows: existing } = await client.query('SELECT id FROM cycles WHERE label = $1', [label]);
-    if (existing.length) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ error: `Cycle ${label} already exists` });
-    }
-
-    const { rows: cycleRows } = await client.query(
-      `INSERT INTO cycles (label, year, month, created_from_cycle_id)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-      [label, year, month, req.params.id],
-    );
-    const newCycle = cycleRows[0];
-
-    await client.query(
-      `INSERT INTO tasks (
-         cycle_id, sort_order, task_name, description, dependency_text, due_date,
-         booking_responsible_id, quality_check_id, url, powerbi_url,
-         booking_status, check_status, cloned_from_task_id
-       )
-       SELECT $1, sort_order, task_name, description, dependency_text, due_date,
-              booking_responsible_id, quality_check_id, url, powerbi_url,
-              CASE WHEN booking_status = 'n_a' THEN 'n_a' ELSE 'not_started' END,
-              CASE WHEN check_status = 'n_a' THEN 'n_a' ELSE 'not_started' END,
-              id
-       FROM tasks WHERE cycle_id = $2
-       ORDER BY sort_order`,
-      [newCycle.id, req.params.id],
-    );
-
-    await client.query('COMMIT');
-    res.status(201).json(newCycle);
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
+  const result = await cloneCycleForward(pool, req.params.id);
+  if (!result.ok) return res.status(result.status).json({ error: result.error });
+  res.status(201).json(result.cycle);
 }));
 
 // ---------------------------------------------------------------------------
@@ -291,58 +267,7 @@ router.post('/cycles/:id/tasks/reorder', asyncHandler(async (req, res) => {
 
 router.get('/report/pivot', asyncHandler(async (req, res) => {
   const months = parseInt(req.query.months, 10) || 6;
-
-  const { rows: recentCycles } = await pool.query(
-    'SELECT * FROM cycles ORDER BY year DESC, month DESC LIMIT $1',
-    [months],
-  );
-  const cycles = recentCycles.reverse(); // oldest -> newest, left to right
-
-  if (!cycles.length) return res.json({ cycles: [], rows: [] });
-
-  const cycleIds = cycles.map((c) => c.id);
-
-  // Walk cloned_from_task_id back to each task's original root, so the same
-  // task is grouped together across months even if it's been cloned several
-  // times over.
-  const { rows: flat } = await pool.query(
-    `WITH RECURSIVE lineage AS (
-       SELECT id, id AS root_id FROM tasks WHERE cloned_from_task_id IS NULL
-       UNION ALL
-       SELECT t.id, l.root_id FROM tasks t JOIN lineage l ON t.cloned_from_task_id = l.id
-     )
-     SELECT t.id AS task_id, t.cycle_id, t.task_name, t.sort_order, t.dependency_text,
-            t.booking_status, t.date_finished,
-            t.booking_responsible_id, t.quality_check_id, l.root_id
-     FROM tasks t
-     JOIN lineage l ON l.id = t.id
-     WHERE t.cycle_id = ANY($1)`,
-    [cycleIds],
-  );
-
-  const byRoot = {};
-  // Process newest -> oldest so task_name/sort_order/dependency_text reflect the most recent occurrence.
-  for (const cycle of [...cycles].reverse()) {
-    for (const r of flat.filter((x) => x.cycle_id === cycle.id)) {
-      if (!byRoot[r.root_id]) {
-        byRoot[r.root_id] = {
-          root_id: r.root_id, task_name: r.task_name, sort_order: r.sort_order,
-          dependency_text: r.dependency_text, cells: {},
-        };
-      }
-      byRoot[r.root_id].cells[cycle.id] = {
-        task_id: r.task_id,
-        booking_status: r.booking_status,
-        date_finished: r.date_finished,
-        booking_responsible_id: r.booking_responsible_id,
-        quality_check_id: r.quality_check_id,
-      };
-    }
-  }
-
-  const rows = Object.values(byRoot).sort((a, b) => a.sort_order - b.sort_order);
-
-  res.json({ cycles, rows });
+  res.json(await getPivot(pool, months));
 }));
 
 module.exports = router;

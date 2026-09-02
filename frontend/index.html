@@ -153,6 +153,9 @@
   .user-row span { flex: 1; }
   .user-row input[type="password"] { width: 130px; flex: none; }
   .no-password-tag { flex: none; font-size: 11px; color: var(--status-orange); white-space: nowrap; }
+  .user-row-group { border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 8px; }
+  .user-row-group .user-row { margin-bottom: 6px; }
+  .token-row { padding-left: 0; }
   .empty-state { padding: 40px; text-align: center; color: var(--text-faint); }
 
   .tab-btn {
@@ -991,12 +994,19 @@ const usersModalBackdrop = document.getElementById('usersModalBackdrop');
 
 function renderUsersList() {
   document.getElementById('usersList').innerHTML = users.map((u) => `
-    <div class="user-row">
-      <span>${escHtml(u.name)}</span>
-      <label><input type="checkbox" data-user-active="${u.id}" ${u.active ? 'checked' : ''}> active</label>
-      ${u.has_password ? '' : '<span class="no-password-tag">no password set</span>'}
-      <input type="password" data-user-password-input="${u.id}" placeholder="New password" autocomplete="new-password">
-      <button class="secondary" data-user-set-password="${u.id}">Set password</button>
+    <div class="user-row-group">
+      <div class="user-row">
+        <span>${escHtml(u.name)}</span>
+        <label><input type="checkbox" data-user-active="${u.id}" ${u.active ? 'checked' : ''}> active</label>
+        ${u.has_password ? '' : '<span class="no-password-tag">no password set</span>'}
+        <input type="password" data-user-password-input="${u.id}" placeholder="New password" autocomplete="new-password">
+        <button class="secondary" data-user-set-password="${u.id}">Set password</button>
+      </div>
+      <div class="user-row token-row">
+        ${u.has_api_token ? '' : '<span class="no-password-tag">no API token (for MCP access)</span>'}
+        <button class="secondary" data-user-gen-token="${u.id}">${u.has_api_token ? 'Regenerate' : 'Generate'} API token</button>
+        ${u.has_api_token ? `<button class="danger" data-user-revoke-token="${u.id}">Revoke token</button>` : ''}
+      </div>
     </div>
   `).join('');
 }
@@ -1025,16 +1035,43 @@ document.getElementById('usersModalAdd').addEventListener('click', async () => {
 });
 
 document.getElementById('usersList').addEventListener('click', async (e) => {
-  const btn = e.target.closest('[data-user-set-password]');
-  if (!btn) return;
-  const userId = btn.dataset.userSetPassword;
-  const input = document.querySelector(`[data-user-password-input="${userId}"]`);
-  const password = input.value;
-  if (!password) return alert('Enter a password first.');
-  if (password.length < 8) return alert('Password should be at least 8 characters.');
-  await api(`/users/${userId}`, { method: 'PATCH', body: JSON.stringify({ password }) });
-  await loadUsers();
-  renderUsersList();
+  const pwBtn = e.target.closest('[data-user-set-password]');
+  if (pwBtn) {
+    const userId = pwBtn.dataset.userSetPassword;
+    const input = document.querySelector(`[data-user-password-input="${userId}"]`);
+    const password = input.value;
+    if (!password) return alert('Enter a password first.');
+    if (password.length < 8) return alert('Password should be at least 8 characters.');
+    await api(`/users/${userId}`, { method: 'PATCH', body: JSON.stringify({ password }) });
+    await loadUsers();
+    renderUsersList();
+    return;
+  }
+
+  const genBtn = e.target.closest('[data-user-gen-token]');
+  if (genBtn) {
+    const userId = genBtn.dataset.userGenToken;
+    const proceed = await showConfirm(
+      'Generate a new API token? Any existing token for this user stops working immediately.',
+      { okLabel: 'Generate', danger: false },
+    );
+    if (!proceed) return;
+    const result = await api(`/users/${userId}/token`, { method: 'POST' });
+    await loadUsers();
+    renderUsersList();
+    alert(`New API token — copy it now, it won't be shown again:\n\n${result.token}`);
+    return;
+  }
+
+  const revokeBtn = e.target.closest('[data-user-revoke-token]');
+  if (revokeBtn) {
+    const userId = revokeBtn.dataset.userRevokeToken;
+    const proceed = await showConfirm('Revoke this API token? Anything using it stops working immediately.');
+    if (!proceed) return;
+    await api(`/users/${userId}/token`, { method: 'DELETE' });
+    await loadUsers();
+    renderUsersList();
+  }
 });
 
 document.getElementById('usersList').addEventListener('change', async (e) => {
