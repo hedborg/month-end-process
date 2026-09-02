@@ -190,6 +190,18 @@
   }
   .login-card { width: 320px; }
   .login-error { color: var(--status-red); font-size: 13px; margin-top: -4px; margin-bottom: 12px; }
+
+  /* Confirm can be opened on top of another already-open modal (e.g. from
+     the Users modal) — it needs to win regardless of DOM order. */
+  #confirmModalBackdrop { z-index: 300; }
+
+  .token-reveal {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 8px; margin-bottom: 8px; border-radius: 6px;
+    background: var(--status-lgreen-bg);
+  }
+  .token-reveal-label { flex: 0 0 100%; font-size: 12px; font-weight: 600; color: var(--status-lgreen); }
+  .token-reveal-input { flex: 1; min-width: 200px; font-family: monospace; font-size: 12px; }
 </style>
 </head>
 <body>
@@ -991,6 +1003,7 @@ document.getElementById('cloneCycleBtn').addEventListener('click', async () => {
 // ---- Users modal ----
 
 const usersModalBackdrop = document.getElementById('usersModalBackdrop');
+let revealedToken = null; // { userId, token } | null — cleared on modal close
 
 function renderUsersList() {
   document.getElementById('usersList').innerHTML = users.map((u) => `
@@ -1002,11 +1015,20 @@ function renderUsersList() {
         <input type="password" data-user-password-input="${u.id}" placeholder="New password" autocomplete="new-password">
         <button class="secondary" data-user-set-password="${u.id}">Set password</button>
       </div>
-      <div class="user-row token-row">
-        ${u.has_api_token ? '' : '<span class="no-password-tag">no API token (for MCP access)</span>'}
-        <button class="secondary" data-user-gen-token="${u.id}">${u.has_api_token ? 'Regenerate' : 'Generate'} API token</button>
-        ${u.has_api_token ? `<button class="danger" data-user-revoke-token="${u.id}">Revoke token</button>` : ''}
-      </div>
+      ${revealedToken && revealedToken.userId === u.id ? `
+        <div class="token-reveal">
+          <span class="token-reveal-label">New API token — copy it now, it won't be shown again:</span>
+          <input type="text" class="token-reveal-input" data-token-input readonly value="${escAttr(revealedToken.token)}">
+          <button class="secondary" data-copy-token="${u.id}">Copy</button>
+          <button class="secondary" data-dismiss-token="${u.id}">Done</button>
+        </div>
+      ` : `
+        <div class="user-row token-row">
+          ${u.has_api_token ? '' : '<span class="no-password-tag">no API token (for MCP access)</span>'}
+          <button class="secondary" data-user-gen-token="${u.id}">${u.has_api_token ? 'Regenerate' : 'Generate'} API token</button>
+          ${u.has_api_token ? `<button class="danger" data-user-revoke-token="${u.id}">Revoke token</button>` : ''}
+        </div>
+      `}
     </div>
   `).join('');
 }
@@ -1018,6 +1040,7 @@ document.getElementById('manageUsersBtn').addEventListener('click', () => {
 
 document.getElementById('usersModalClose').addEventListener('click', async () => {
   usersModalBackdrop.classList.remove('show');
+  revealedToken = null;
   await loadUsers();
   renderTasks();
 });
@@ -1035,6 +1058,9 @@ document.getElementById('usersModalAdd').addEventListener('click', async () => {
 });
 
 document.getElementById('usersList').addEventListener('click', async (e) => {
+  const tokenInput = e.target.closest('[data-token-input]');
+  if (tokenInput) { tokenInput.select(); return; }
+
   const pwBtn = e.target.closest('[data-user-set-password]');
   if (pwBtn) {
     const userId = pwBtn.dataset.userSetPassword;
@@ -1058,8 +1084,8 @@ document.getElementById('usersList').addEventListener('click', async (e) => {
     if (!proceed) return;
     const result = await api(`/users/${userId}/token`, { method: 'POST' });
     await loadUsers();
+    revealedToken = { userId: Number(userId), token: result.token };
     renderUsersList();
-    alert(`New API token — copy it now, it won't be shown again:\n\n${result.token}`);
     return;
   }
 
@@ -1070,6 +1096,27 @@ document.getElementById('usersList').addEventListener('click', async (e) => {
     if (!proceed) return;
     await api(`/users/${userId}/token`, { method: 'DELETE' });
     await loadUsers();
+    renderUsersList();
+    return;
+  }
+
+  const copyBtn = e.target.closest('[data-copy-token]');
+  if (copyBtn) {
+    try {
+      await navigator.clipboard.writeText(revealedToken.token);
+      const original = copyBtn.textContent;
+      copyBtn.textContent = 'Copied!';
+      setTimeout(() => { copyBtn.textContent = original; }, 1500);
+    } catch (err) {
+      copyBtn.closest('.token-reveal').querySelector('[data-token-input]').select();
+      alert('Could not copy automatically — the field is selected, press Ctrl+C.');
+    }
+    return;
+  }
+
+  const dismissBtn = e.target.closest('[data-dismiss-token]');
+  if (dismissBtn) {
+    revealedToken = null;
     renderUsersList();
   }
 });
