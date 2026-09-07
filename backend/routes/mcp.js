@@ -113,9 +113,10 @@ function getServer(pool) {
   });
 
   server.registerTool('update_task', {
-    description: 'Update a task\'s booking status, check status, comment, finished date, task URL, or Power BI URL. Get the task_id from list_tasks or get_my_tasks first.',
+    description: 'Update a task\'s description, booking status, check status, comment, finished date, task URL, or Power BI URL. Get the task_id from list_tasks or get_my_tasks first.',
     inputSchema: {
       task_id: z.number().int().describe('Task id, from list_tasks or get_my_tasks'),
+      description: z.string().optional(),
       booking_status: STATUS_ENUM.optional(),
       check_status: STATUS_ENUM.optional(),
       comment: z.string().optional(),
@@ -123,9 +124,10 @@ function getServer(pool) {
       url: z.string().optional().describe('The task\'s reference URL (🔗 in the Links column)'),
       powerbi_url: z.string().optional().describe('The task\'s Power BI URL (📊 in the Links column)'),
     },
-  }, async ({ task_id: taskId, booking_status: bookingStatus, check_status: checkStatus, comment, date_finished: dateFinished, url, powerbi_url: powerbiUrl }) => {
+  }, async ({ task_id: taskId, description, booking_status: bookingStatus, check_status: checkStatus, comment, date_finished: dateFinished, url, powerbi_url: powerbiUrl }) => {
     const fields = [];
     const values = [];
+    if (description !== undefined) { values.push(description); fields.push(`description = $${values.length}`); }
     if (bookingStatus) { values.push(bookingStatus); fields.push(`booking_status = $${values.length}`); }
     if (checkStatus) { values.push(checkStatus); fields.push(`check_status = $${values.length}`); }
     if (comment !== undefined) { values.push(comment); fields.push(`comment = $${values.length}`); }
@@ -138,7 +140,7 @@ function getServer(pool) {
     values.push(taskId);
     const { rows } = await pool.query(
       `UPDATE tasks SET ${fields.join(', ')}, updated_at = now() WHERE id = $${values.length}
-       RETURNING id, task_name, booking_status, check_status, comment, date_finished, url, powerbi_url`,
+       RETURNING id, task_name, description, booking_status, check_status, comment, date_finished, url, powerbi_url`,
       values,
     );
     if (!rows.length) return { content: [{ type: 'text', text: `No task with id ${taskId}.` }], isError: true };
