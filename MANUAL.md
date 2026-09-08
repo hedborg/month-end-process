@@ -37,6 +37,12 @@ early if you're on a shared machine.
   text fields save when you click away, dropdowns save immediately.
 - Two independent statuses per task: **Booking Status** (doing the work) and
   **Check Status** (reviewing it).
+- **Description** vs **Comment** — easy to mix up, so worth being deliberate:
+  Description is the standing instructions for the task (what to do, how) and
+  carries over every time you clone into a new month. Comment is this
+  month's log only (what's been done, open questions, anything worth
+  flagging) and starts blank again next month. Put permanent how-to changes
+  in Description; put "for this month" notes in Comment.
 - Drag the `⠿` handle to reorder tasks.
 - **Hide completed** and **Show my tasks** (same as on the Overview,
   checked by default), plus a Booking Status dropdown, to narrow a long list.
@@ -49,8 +55,10 @@ early if you're on a shared machine.
 ## Starting a new month
 
 Click **"Clone into new month"** — it automatically targets the next
-calendar month and copies every task over, statuses reset to Not Started
-(N/A tasks stay N/A), comments cleared.
+calendar month and copies every task over: names, owners, links,
+dependencies, and **Description** all carry through unchanged; statuses
+reset to Not Started (N/A tasks stay N/A); finished dates and **Comments**
+are cleared blank.
 
 ⚠️ Don't add the same task separately to two different months — cloning is
 what links a task's history together across months in the Overview. If you

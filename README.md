@@ -118,6 +118,16 @@ npm run dev
   (reviewing it). Status values: `not_started`, `in_progress`, `waiting`,
   `ready_to_be_booked`, `done`, `n_a`.
 
+Two free-text fields are easy to mix up, since both just look like "notes on
+the task": **description** is the task's standing instructions — what should
+be done and how — and is a property of the task itself, so it's carried
+forward unchanged when the cycle is cloned into next month. **comment** is
+this month's log — progress notes, blockers, open questions — and is
+cleared blank on clone, since it belongs to that one month's run, not the
+task in general. Don't put a status update in description or a standing
+instruction in comment; the MCP tools spell out the same distinction so an
+LLM doesn't have to guess it from the field names alone.
+
 `ready_to_be_booked` sits between `in_progress`/`waiting` and `done` — a
 medium green, distinct from the light green of `in_progress` and the dark
 green of `done`. It's meant for the Quality Check person to signal to the
@@ -180,8 +190,9 @@ later deleted, just shows a blank cell for the months it wasn't present in.
 `POST /api/cycles/:id/clone` always targets the calendar month right after
 the source cycle (`2026-06` → `2026-07`, `2026-12` → `2027-01`) — there's
 nothing to fill in. It copies every task into the new cycle, keeping
-names/owners/links/dependencies but resetting both status fields to
-`not_started` and clearing finished dates and comments. Tasks that were
+names/owners/links/dependencies/**description** but resetting both status
+fields to `not_started` and clearing finished dates and **comments** — see
+the description-vs-comment distinction under Data model above. Tasks that were
 `n_a` stay `n_a` — that's the one status that carries over, since "not
 applicable" is a property of the task, not the month's progress. Cloning into
 a month that already exists returns a 409. The "Clone into new month" button
