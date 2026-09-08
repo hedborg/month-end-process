@@ -11,6 +11,25 @@ const { getPivot } = require('../lib/pivot');
 const STATUS_VALUES = ['not_started', 'in_progress', 'waiting', 'ready_to_be_booked', 'done', 'n_a'];
 const STATUS_ENUM = z.enum(STATUS_VALUES);
 
+// description and comment are easy to conflate — both are free text on the
+// same task — but they persist differently across a clone-forward, so
+// every tool that reads or writes either one repeats this distinction
+// rather than relying on the field name alone.
+const FIELD_NOTE = "Note the difference between two similarly-named fields: 'description' is the "
+  + "task's standing instructions (what to do and how) and is carried forward unchanged whenever "
+  + "the cycle is cloned into next month; 'comment' is this month's log only (progress notes, "
+  + "blockers, open questions) and is cleared blank on clone. Don't put this month's status update "
+  + "in description, and don't put standing instructions in comment.";
+
+const DESCRIPTION_FIELD = z.string().optional().describe(
+  "The task's standing instructions — what should be done and how. Persists across months: "
+  + 'carried forward unchanged when the cycle is cloned. Not for logging this month\'s progress — use comment for that.'
+);
+const COMMENT_FIELD = z.string().optional().describe(
+  "This month's log only — progress notes, blockers, open questions. Cleared to blank on clone, "
+  + "so nothing here carries forward. Not for standing instructions — use description for that."
+);
+
 // Accepts either a short-lived OAuth access token (Claude web/Desktop/
 // Cowork, issued via lib/oauth.js) or a long-lived static personal API
 // token (Claude Code, see lib/apiTokens.js) — both end up identifying the
@@ -79,7 +98,7 @@ function getServer(pool) {
   });
 
   server.registerTool('get_my_tasks', {
-    description: "List tasks in a cycle where the calling user (the token's owner) is Booking Responsible or Quality Check. Defaults to the most recent cycle.",
+    description: "List tasks in a cycle where the calling user (the token's owner) is Booking Responsible or Quality Check. Defaults to the most recent cycle. " + FIELD_NOTE,
     inputSchema: { cycle_label: z.string().optional().describe('e.g. "2026-07" — defaults to the most recent cycle') },
   }, async ({ cycle_label: cycleLabel }, extra) => {
     const cycle = await resolveCycle(pool, cycleLabel);
@@ -95,7 +114,7 @@ function getServer(pool) {
   });
 
   server.registerTool('list_tasks', {
-    description: 'List all tasks in a cycle, optionally filtered by booking status. Defaults to the most recent cycle.',
+    description: 'List all tasks in a cycle, optionally filtered by booking status. Defaults to the most recent cycle. ' + FIELD_NOTE,
     inputSchema: {
       cycle_label: z.string().optional().describe('e.g. "2026-07" — defaults to the most recent cycle'),
       booking_status: STATUS_ENUM.optional(),
@@ -113,13 +132,13 @@ function getServer(pool) {
   });
 
   server.registerTool('update_task', {
-    description: 'Update a task\'s description, booking status, check status, comment, finished date, task URL, or Power BI URL. Get the task_id from list_tasks or get_my_tasks first.',
+    description: 'Update a task\'s description, booking status, check status, comment, finished date, task URL, or Power BI URL. Get the task_id from list_tasks or get_my_tasks first. ' + FIELD_NOTE,
     inputSchema: {
       task_id: z.number().int().describe('Task id, from list_tasks or get_my_tasks'),
-      description: z.string().optional(),
+      description: DESCRIPTION_FIELD,
       booking_status: STATUS_ENUM.optional(),
       check_status: STATUS_ENUM.optional(),
-      comment: z.string().optional(),
+      comment: COMMENT_FIELD,
       date_finished: z.string().optional().describe('ISO date, e.g. "2026-07-31"'),
       url: z.string().optional().describe('The task\'s reference URL (🔗 in the Links column)'),
       powerbi_url: z.string().optional().describe('The task\'s Power BI URL (📊 in the Links column)'),
