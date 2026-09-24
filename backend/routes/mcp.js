@@ -7,6 +7,7 @@ const z = require('zod');
 const { findUserByToken } = require('../lib/apiTokens');
 const { cloneCycleForward } = require('../lib/cycles');
 const { getPivot } = require('../lib/pivot');
+const todos = require('../lib/todos');
 
 const STATUS_VALUES = ['not_started', 'in_progress', 'waiting', 'ready_to_be_booked', 'done', 'n_a'];
 const STATUS_ENUM = z.enum(STATUS_VALUES);
@@ -29,6 +30,22 @@ const COMMENT_FIELD = z.string().optional().describe(
   "This month's log only — progress notes, blockers, open questions. Cleared to blank on clone, "
   + "so nothing here carries forward. Not for standing instructions — use description for that."
 );
+
+// Personal to-dos are visible only to their owner in the app, so the tools
+// ask the model to respect that when it repeats them anywhere — e.g. a
+// morning agenda posted to a team channel should carry mep_tasks only.
+const PRIVATE_NOTE = 'Personal to-dos are private to this user: show them to the user directly, but never '
+  + 'include them in anything shared with others (team channels, emails, shared docs) unless the user '
+  + 'explicitly asks for a specific item to be shared.';
+
+const TODO_FIELDS = {
+  notes: z.string().optional().describe('Standing context for the to-do — links, who to ask, how to do it'),
+  priority: z.enum(['high', 'normal', 'low']).optional(),
+  due_date: z.string().optional().describe('YYYY-MM-DD'),
+  follow_up_date: z.string().optional().describe('YYYY-MM-DD — for waiting items: when to chase'),
+  linked_task_id: z.number().int().nullable().optional()
+    .describe('Optional id of a related month-end task (from get_my_tasks / list_tasks)'),
+};
 
 // Accepts either a short-lived OAuth access token (Claude web/Desktop/
 // Cowork, issued via lib/oauth.js) or a long-lived static personal API
@@ -176,6 +193,75 @@ function getServer(pool) {
     const result = await cloneCycleForward(pool, source.id);
     if (!result.ok) return { content: [{ type: 'text', text: result.error }], isError: true };
     return { content: [{ type: 'text', text: JSON.stringify(result.cycle, null, 2) }] };
+  });
+
+  // ---- Personal to-dos (see lib/todos.js) ----
+  // Every tool below acts only on the calling user's own list; the owner is
+  // always the token's user, never an input.
+
+  const asText = (value) => ({ content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] });
+  const asError = (message) => ({ content: [{ type: 'text', text: message }], isError: true });
+  const ownerOf = (extra) => extra.authInfo.extra.userId;
+
+  server.registerTool('get_my_day', {
+    description: "The calling user's day at a glance — the tool to use for \"what's in MEP today?\". Returns "
+      + "(1) mep_tasks: their outstanding month-end tasks across every open cycle, with booking_outstanding / "
+      + 'check_outstanding saying which of their roles on each task is still open; and (2) private_todos: their '
+      + 'personal to-dos that are due, overdue or due for follow-up today, plus waiting items not yet due. '
+      + PRIVATE_NOTE,
+    inputSchema: {},
+  }, async (_args, extra) => asText(await todos.getMyDay(pool, ownerOf(extra))));
+
+  server.registerTool('list_my_todos', {
+    description: "List the calling user's personal to-dos. view: 'all' (default — open, waiting, and done in the "
+      + "last 14 days), 'active' (open + waiting), 'today' (due, overdue or follow-up due), 'overdue', "
+      + "'upcoming' (due in the next 7 days), 'waiting', 'done' (last 14 days). " + PRIVATE_NOTE,
+    inputSchema: { view: z.enum(['all', 'active', 'today', 'overdue', 'upcoming', 'waiting', 'done']).optional() },
+  }, async ({ view }, extra) => asText(await todos.listTodos(pool, ownerOf(extra), view || 'all')));
+
+  server.registerTool('add_todo', {
+    description: "Add a to-do to the calling user's personal list. Resolve relative dates (\"Friday\", "
+      + '"next week") to absolute YYYY-MM-DD before calling. ' + PRIVATE_NOTE,
+    inputSchema: {
+      title: z.string().describe('Short, actionable — e.g. "Chase Ops for the Striga PDF"'),
+      ...TODO_FIELDS,
+    },
+  }, async (fields, extra) => {
+    const result = await todos.createTodo(pool, ownerOf(extra), fields, 'mcp');
+    return result.ok ? asText(result.todo) : asError(result.error);
+  });
+
+  server.registerTool('update_todo', {
+    description: "Update one of the calling user's to-dos. Only the fields you pass change; pass an empty "
+      + 'string to clear notes or a date, or null to unlink the task. To mark something done use complete_todo. ' + PRIVATE_NOTE,
+    inputSchema: {
+      todo_id: z.number().int().describe('From list_my_todos or get_my_day'),
+      title: z.string().optional(),
+      status: z.enum(['open', 'waiting', 'done']).optional()
+        .describe("'waiting' = blocked on someone else; set follow_up_date for when to chase"),
+      ...TODO_FIELDS,
+    },
+  }, async ({ todo_id: todoId, ...fields }, extra) => {
+    const result = await todos.updateTodo(pool, ownerOf(extra), todoId, fields);
+    return result.ok ? asText(result.todo) : asError(result.status === 404 ? `No to-do with id ${todoId}.` : result.error);
+  });
+
+  server.registerTool('complete_todo', {
+    description: "Mark one of the calling user's to-dos as done.",
+    inputSchema: { todo_id: z.number().int().describe('From list_my_todos or get_my_day') },
+  }, async ({ todo_id: todoId }, extra) => {
+    const result = await todos.updateTodo(pool, ownerOf(extra), todoId, { status: 'done' });
+    return result.ok ? asText(result.todo) : asError(`No to-do with id ${todoId}.`);
+  });
+
+  server.registerTool('archive_todo', {
+    description: "Remove one of the calling user's to-dos from their list (soft delete — recoverable in the "
+      + 'database, but gone from every view). Confirm with the user before archiving anything they did not '
+      + 'explicitly ask to remove.',
+    inputSchema: { todo_id: z.number().int().describe('From list_my_todos or get_my_day') },
+  }, async ({ todo_id: todoId }, extra) => {
+    const result = await todos.updateTodo(pool, ownerOf(extra), todoId, { status: 'archived' });
+    return result.ok ? asText({ archived: todoId }) : asError(`No to-do with id ${todoId}.`);
   });
 
   return server;

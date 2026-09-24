@@ -162,6 +162,40 @@
   .token-row { padding-left: 0; }
   .empty-state { padding: 40px; text-align: center; color: var(--text-faint); }
 
+  /* ---- My To-Do ---- */
+  .todo-add #todoNewTitle { flex: 1; max-width: 480px; }
+  .todo-private-note { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+  .todo-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
+  @media (max-width: 900px) { .todo-layout { grid-template-columns: 1fr; } }
+  .todo-section { margin-bottom: 18px; }
+  .todo-section h3, .todo-mep h3 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted);
+    margin: 0 0 6px; font-weight: 600;
+  }
+  .todo-section h3 .count { font-weight: 400; margin-left: 4px; }
+  .todo-section.overdue h3 { color: var(--status-red); }
+  .todo-item {
+    display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px;
+  }
+  .todo-item input[type=checkbox] { width: 16px; height: 16px; margin: 0; cursor: pointer; flex: none; }
+  .todo-title { flex: 1; min-width: 0; cursor: pointer; overflow-wrap: anywhere; }
+  .todo-title:hover { text-decoration: underline; }
+  .todo-item.done .todo-title { text-decoration: line-through; color: var(--text-muted); }
+  .todo-meta { display: flex; gap: 6px; align-items: center; flex: none; font-size: 12px; color: var(--text-muted); }
+  .todo-chip { padding: 1px 8px; border-radius: 999px; background: var(--gray-bg); color: var(--gray); white-space: nowrap; }
+  .todo-chip.overdue { background: var(--status-red-bg); color: var(--status-red); }
+  .todo-chip.today { background: var(--amber-bg); color: var(--amber); }
+  .todo-chip.linked { background: var(--blue-bg); color: var(--blue); max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+  .todo-priority-high { width: 8px; height: 8px; border-radius: 50%; background: var(--status-red); flex: none; }
+  .todo-empty { color: var(--text-faint); font-size: 13px; padding: 4px 0 8px; }
+  .todo-mep { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .todo-mep-item { padding: 6px 0; border-top: 1px solid var(--border); font-size: 13px; }
+  .todo-mep-item:first-child { border-top: none; }
+  .todo-mep-item .sub { font-size: 12px; color: var(--text-muted); }
+  .todo-edit-linked { font-size: 12px; color: var(--text-muted); }
+  .modal textarea { font-family: inherit; resize: vertical; }
+
   .tab-btn {
     background: none; border: none; color: var(--text-muted); font-weight: 600;
     padding: 6px 10px; border-radius: 6px; cursor: pointer;
@@ -233,6 +267,7 @@
   <h1>Month-End Process</h1>
   <button class="tab-btn" id="tabOverviewBtn">Overview</button>
   <button class="tab-btn" id="tabChecklistBtn">Checklist</button>
+  <button class="tab-btn" id="tabTodoBtn">My To-Do</button>
   <div class="checklist-header-controls" id="checklistHeaderControls" style="display:none">
     <select id="cycleSelect"></select>
     <span id="cycleStatusBadge" class="cycle-badge"></span>
@@ -261,6 +296,28 @@
         <thead><tr id="overviewHeaderRow"></tr></thead>
         <tbody id="overviewBody"></tbody>
       </table>
+    </div>
+  </div>
+
+  <div id="todoPanel" style="display:none">
+    <div class="toolbar todo-add">
+      <input type="text" id="todoNewTitle" placeholder="Add a to-do…" autocomplete="off">
+      <input type="date" id="todoNewDue" title="Due date (optional)">
+      <select id="todoNewPriority" title="Priority">
+        <option value="normal">Normal</option>
+        <option value="high">High</option>
+        <option value="low">Low</option>
+      </select>
+      <button id="todoAddBtn">Add</button>
+      <div class="spacer"></div>
+      <span class="todo-private-note">🔒 Only you can see this list</span>
+    </div>
+    <div class="todo-layout">
+      <div id="todoSections"></div>
+      <aside class="todo-mep">
+        <h3>My open month-end tasks</h3>
+        <div id="todoMepTasks"></div>
+      </aside>
     </div>
   </div>
 
@@ -335,6 +392,52 @@
     <div class="actions">
       <button class="secondary" id="confirmModalCancel">Cancel</button>
       <button class="danger" id="confirmModalOk">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- To-do edit modal -->
+<div class="modal-backdrop" id="todoModalBackdrop">
+  <div class="modal">
+    <h2>Edit to-do</h2>
+    <div class="field">
+      <label>Title</label>
+      <input type="text" id="todoEditTitle">
+    </div>
+    <div class="field">
+      <label>Notes</label>
+      <textarea id="todoEditNotes" rows="4"></textarea>
+    </div>
+    <div class="field">
+      <label>Status</label>
+      <select id="todoEditStatus">
+        <option value="open">Open</option>
+        <option value="waiting">Waiting on someone</option>
+        <option value="done">Done</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Priority</label>
+      <select id="todoEditPriority">
+        <option value="high">High</option>
+        <option value="normal">Normal</option>
+        <option value="low">Low</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Due date</label>
+      <input type="date" id="todoEditDue">
+    </div>
+    <div class="field">
+      <label>Follow up on (for waiting items)</label>
+      <input type="date" id="todoEditFollowUp">
+    </div>
+    <div id="todoEditLinked" class="todo-edit-linked"></div>
+    <div class="actions">
+      <button class="danger" id="todoModalDelete">Delete</button>
+      <div class="spacer"></div>
+      <button class="secondary" id="todoModalCancel">Cancel</button>
+      <button id="todoModalSave">Save</button>
     </div>
   </div>
 </div>
@@ -628,9 +731,151 @@ function switchView(view) {
   currentView = view;
   document.getElementById('overviewPanel').style.display = view === 'overview' ? '' : 'none';
   document.getElementById('checklistPanel').style.display = view === 'checklist' ? '' : 'none';
+  document.getElementById('todoPanel').style.display = view === 'todo' ? '' : 'none';
   document.getElementById('checklistHeaderControls').style.display = view === 'checklist' ? 'flex' : 'none';
   document.getElementById('tabOverviewBtn').classList.toggle('active', view === 'overview');
   document.getElementById('tabChecklistBtn').classList.toggle('active', view === 'checklist');
+  document.getElementById('tabTodoBtn').classList.toggle('active', view === 'todo');
+}
+
+// ---- My To-Do ----
+// Private to the signed-in user — the server scopes every /api/todos call
+// to the session's user, so there's nothing to filter here.
+
+let todos = [];
+let myDay = { today: null, mep_tasks: [] };
+let editingTodoId = null;
+
+async function loadTodos() {
+  [todos, myDay] = await Promise.all([api('/todos'), api('/my-day')]);
+  renderTodos();
+}
+
+// Buckets use the server's idea of "today" (the team's timezone), not the
+// browser's, so they always agree with what Claude sees via get_my_day.
+function bucketTodo(t, today, weekEnd) {
+  if (t.status === 'done') return 'done';
+  if (t.status === 'waiting') return 'waiting';
+  if (!t.due_date) return 'later';
+  if (t.due_date < today) return 'overdue';
+  if (t.due_date === today) return 'today';
+  if (t.due_date <= weekEnd) return 'week';
+  return 'later';
+}
+
+function addDays(isoDate, n) {
+  const d = new Date(isoDate + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+function renderTodoItem(t, today) {
+  const done = t.status === 'done';
+  const chips = [];
+  if (t.status === 'waiting' && t.follow_up_date) {
+    const cls = t.follow_up_date <= today ? 'today' : '';
+    chips.push(`<span class="todo-chip ${cls}">follow up ${t.follow_up_date === today ? 'today' : t.follow_up_date}</span>`);
+  }
+  if (t.due_date && !done) {
+    const cls = t.due_date < today ? 'overdue' : t.due_date === today ? 'today' : '';
+    chips.push(`<span class="todo-chip ${cls}">${t.due_date === today ? 'today' : t.due_date}</span>`);
+  }
+  if (t.linked_task_name) {
+    chips.push(`<span class="todo-chip linked" title="${escAttr(t.linked_task_name)}">${escHtml(t.linked_task_name)}</span>`);
+  }
+  return `
+    <div class="todo-item ${done ? 'done' : ''}">
+      <input type="checkbox" data-todo-toggle="${t.id}" ${done ? 'checked' : ''} title="${done ? 'Reopen' : 'Mark done'}">
+      ${t.priority === 'high' && !done ? '<span class="todo-priority-high" title="High priority"></span>' : ''}
+      <span class="todo-title" data-todo-edit="${t.id}">${escHtml(t.title)}</span>
+      <span class="todo-meta">
+        ${chips.join('')}
+        ${t.created_via === 'mcp' ? '<span title="Added by Claude">✨</span>' : ''}
+      </span>
+    </div>
+  `;
+}
+
+function renderTodos() {
+  const today = myDay.today || new Date().toISOString().slice(0, 10);
+  const weekEnd = addDays(today, 7);
+  const sections = [
+    { key: 'overdue', title: 'Overdue' },
+    { key: 'today', title: 'Today' },
+    { key: 'week', title: 'Next 7 days' },
+    { key: 'later', title: 'Later / no date' },
+    { key: 'waiting', title: 'Waiting on someone' },
+    { key: 'done', title: 'Done (last 14 days)' },
+  ];
+  const byBucket = Object.fromEntries(sections.map((s) => [s.key, []]));
+  for (const t of todos) byBucket[bucketTodo(t, today, weekEnd)].push(t);
+
+  const activeCount = todos.filter((t) => t.status !== 'done').length;
+  document.getElementById('todoSections').innerHTML = activeCount === 0 && !byBucket.done.length
+    ? '<div class="empty-state">Nothing on your list. Add something above, or ask Claude to add it for you.</div>'
+    : sections
+      // Always show Today so there's an anchor; hide other empty sections.
+      .filter((s) => byBucket[s.key].length || s.key === 'today')
+      .map((s) => `
+        <section class="todo-section ${s.key}">
+          <h3>${s.title}<span class="count">${byBucket[s.key].length}</span></h3>
+          ${byBucket[s.key].length
+            ? byBucket[s.key].map((t) => renderTodoItem(t, today)).join('')
+            : '<div class="todo-empty">Nothing due today.</div>'}
+        </section>
+      `).join('');
+
+  document.getElementById('todoMepTasks').innerHTML = myDay.mep_tasks.length
+    ? myDay.mep_tasks.map((t) => {
+      const roles = [];
+      if (t.booking_outstanding) roles.push(`Booking: ${STATUS_LABELS[t.booking_status] || t.booking_status}`);
+      if (t.check_outstanding) roles.push(`Check: ${STATUS_LABELS[t.check_status] || t.check_status}`);
+      return `
+        <div class="todo-mep-item">
+          <div>${escHtml(t.task_name)}</div>
+          <div class="sub">${escHtml(t.cycle)}${t.due_date ? ` · due ${escHtml(t.due_date)}` : ''} · ${roles.join(' · ')}</div>
+        </div>`;
+    }).join('')
+    : '<div class="todo-empty">Nothing outstanding in open cycles. 🎉</div>';
+}
+
+async function addTodoFromForm() {
+  const titleEl = document.getElementById('todoNewTitle');
+  const dueEl = document.getElementById('todoNewDue');
+  const priorityEl = document.getElementById('todoNewPriority');
+  const title = titleEl.value.trim();
+  if (!title) return;
+  await api('/todos', {
+    method: 'POST',
+    body: JSON.stringify({ title, due_date: dueEl.value || null, priority: priorityEl.value }),
+  });
+  titleEl.value = '';
+  dueEl.value = '';
+  priorityEl.value = 'normal';
+  titleEl.focus();
+  await loadTodos();
+}
+
+function openTodoModal(id) {
+  const t = todos.find((x) => x.id === id);
+  if (!t) return;
+  editingTodoId = id;
+  document.getElementById('todoEditTitle').value = t.title;
+  document.getElementById('todoEditNotes').value = t.notes || '';
+  document.getElementById('todoEditStatus').value = t.status;
+  document.getElementById('todoEditPriority').value = t.priority;
+  document.getElementById('todoEditDue').value = t.due_date || '';
+  document.getElementById('todoEditFollowUp').value = t.follow_up_date || '';
+  document.getElementById('todoEditLinked').innerHTML = t.linked_task_name
+    ? `Linked to month-end task: <strong>${escHtml(t.linked_task_name)}</strong> (${escHtml(t.linked_cycle_label)})`
+    : '';
+  document.getElementById('todoModalBackdrop').classList.add('show');
+  document.getElementById('todoEditTitle').focus();
+}
+
+function closeTodoModal() {
+  editingTodoId = null;
+  document.getElementById('todoModalBackdrop').classList.remove('show');
 }
 
 // ---- Task detail modal (quick edit from Overview) ----
@@ -771,6 +1016,57 @@ document.getElementById('tabOverviewBtn').addEventListener('click', async () => 
 });
 
 document.getElementById('tabChecklistBtn').addEventListener('click', () => switchView('checklist'));
+
+document.getElementById('tabTodoBtn').addEventListener('click', async () => {
+  switchView('todo');
+  await loadTodos();
+  document.getElementById('todoNewTitle').focus();
+});
+
+document.getElementById('todoAddBtn').addEventListener('click', addTodoFromForm);
+document.getElementById('todoNewTitle').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') addTodoFromForm();
+});
+
+document.getElementById('todoSections').addEventListener('click', async (e) => {
+  const editEl = e.target.closest('[data-todo-edit]');
+  if (editEl) openTodoModal(Number(editEl.dataset.todoEdit));
+});
+
+document.getElementById('todoSections').addEventListener('change', async (e) => {
+  const id = e.target.dataset.todoToggle;
+  if (!id) return;
+  await api(`/todos/${id}`, { method: 'PATCH', body: JSON.stringify({ status: e.target.checked ? 'done' : 'open' }) });
+  await loadTodos();
+});
+
+document.getElementById('todoModalCancel').addEventListener('click', closeTodoModal);
+
+document.getElementById('todoModalSave').addEventListener('click', async () => {
+  const title = document.getElementById('todoEditTitle').value.trim();
+  if (!title) return alert('Title is required.');
+  await api(`/todos/${editingTodoId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      title,
+      notes: document.getElementById('todoEditNotes').value,
+      status: document.getElementById('todoEditStatus').value,
+      priority: document.getElementById('todoEditPriority').value,
+      due_date: document.getElementById('todoEditDue').value,
+      follow_up_date: document.getElementById('todoEditFollowUp').value,
+    }),
+  });
+  closeTodoModal();
+  await loadTodos();
+});
+
+document.getElementById('todoModalDelete').addEventListener('click', async () => {
+  const id = editingTodoId;
+  if (!(await showConfirm('Delete this to-do?'))) return;
+  await api(`/todos/${id}`, { method: 'DELETE' });
+  closeTodoModal();
+  await loadTodos();
+});
 
 document.getElementById('overviewUserFilter').addEventListener('change', renderOverview);
 document.getElementById('overviewHideCompleted').addEventListener('change', renderOverview);

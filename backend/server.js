@@ -195,6 +195,27 @@ async function migrate() {
   if (bootstrapped.length) console.log(`bootstrapped admin: ${bootstrapped.map((u) => u.name).join(', ')}`);
   const { rows: admins } = await pool.query('SELECT 1 FROM users WHERE is_admin AND active LIMIT 1');
   if (!admins.length) console.warn('WARNING: no active admin user — nobody can add users or reset passwords');
+
+  // M7: personal to-dos — private per user, not tied to a cycle. See
+  // lib/todos.js for the owner-scoping rule every query follows.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS personal_todos (
+      id SERIAL PRIMARY KEY,
+      owner_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      notes TEXT,
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'waiting', 'done', 'archived')),
+      priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('high', 'normal', 'low')),
+      due_date DATE,
+      follow_up_date DATE,
+      linked_task_id INT REFERENCES tasks(id) ON DELETE SET NULL,
+      created_via TEXT NOT NULL DEFAULT 'web' CHECK (created_via IN ('web', 'mcp')),
+      completed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_personal_todos_owner ON personal_todos(owner_id, status)`);
 }
 
 migrate()
