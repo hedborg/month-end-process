@@ -179,6 +179,22 @@ async function migrate() {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user ON oauth_tokens(user_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_oauth_auth_codes_expires ON oauth_auth_codes(expires_at)`);
+
+  // M6: admin role. Until now any logged-in user could set anyone's password
+  // or mint anyone's API token (i.e. impersonate them) — those actions are now
+  // gated on is_admin or on acting on your own account (see routes/api.js).
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false`);
+  // Bootstrap the first admin — only while no admin exists at all, so a
+  // later demotion made through the UI isn't undone on the next restart.
+  const { rows: bootstrapped } = await pool.query(`
+    UPDATE users SET is_admin = true
+    WHERE (name = 'Niklas' OR name ILIKE 'Niklas %')
+      AND NOT EXISTS (SELECT 1 FROM users WHERE is_admin)
+    RETURNING name
+  `);
+  if (bootstrapped.length) console.log(`bootstrapped admin: ${bootstrapped.map((u) => u.name).join(', ')}`);
+  const { rows: admins } = await pool.query('SELECT 1 FROM users WHERE is_admin AND active LIMIT 1');
+  if (!admins.length) console.warn('WARNING: no active admin user — nobody can add users or reset passwords');
 }
 
 migrate()

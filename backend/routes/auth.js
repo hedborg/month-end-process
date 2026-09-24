@@ -92,7 +92,7 @@ router.post('/logout', (req, res) => {
 router.get('/session', async (req, res) => {
   if (!req.session || !req.session.userId) return res.status(401).json({ error: 'not logged in' });
   const { rows } = await pool.query(
-    'SELECT id, name FROM users WHERE id = $1 AND active = true',
+    'SELECT id, name, is_admin FROM users WHERE id = $1 AND active = true',
     [req.session.userId],
   );
   if (!rows.length) return res.status(401).json({ error: 'not logged in' });

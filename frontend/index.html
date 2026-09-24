@@ -156,6 +156,7 @@
   .user-row span { flex: 1; }
   .user-row input[type="password"] { width: 130px; flex: none; }
   .no-password-tag { flex: none; font-size: 11px; color: var(--status-orange); white-space: nowrap; }
+  .admin-tag { flex: none; font-size: 11px; color: var(--text-muted); white-space: nowrap; }
   .user-row-group { border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 8px; }
   .user-row-group .user-row { margin-bottom: 6px; }
   .token-row { padding-left: 0; }
@@ -358,13 +359,15 @@
   <div class="modal modal-wide">
     <h2>Users</h2>
     <div id="usersList"></div>
-    <div class="field" style="margin-top:12px">
-      <label>Add user</label>
-      <input type="text" id="newUserName" placeholder="Full name">
-    </div>
-    <div class="field">
-      <label>Password (optional — can be set later)</label>
-      <input type="password" id="newUserPassword" placeholder="Password" autocomplete="new-password">
+    <div id="addUserSection">
+      <div class="field" style="margin-top:12px">
+        <label>Add user</label>
+        <input type="text" id="newUserName" placeholder="Full name">
+      </div>
+      <div class="field">
+        <label>Password (optional — can be set later)</label>
+        <input type="password" id="newUserPassword" placeholder="Password" autocomplete="new-password">
+      </div>
     </div>
     <div class="actions">
       <button class="secondary" id="usersModalClose">Close</button>
@@ -1008,15 +1011,31 @@ document.getElementById('cloneCycleBtn').addEventListener('click', async () => {
 const usersModalBackdrop = document.getElementById('usersModalBackdrop');
 let revealedToken = null; // { userId, token } | null — cleared on modal close
 
+// Mirrors the server-side rules in routes/api.js — only shows the controls
+// the signed-in user is actually allowed to use; the server enforces them.
 function renderUsersList() {
-  document.getElementById('usersList').innerHTML = users.map((u) => `
+  const isAdmin = !!(currentUser && currentUser.is_admin);
+  document.getElementById('addUserSection').style.display = isAdmin ? '' : 'none';
+  document.getElementById('usersModalAdd').style.display = isAdmin ? '' : 'none';
+  document.getElementById('usersList').innerHTML = users.map((u) => {
+    const isSelf = !!currentUser && u.id === currentUser.id;
+    const canEditOthers = isAdmin && !isSelf;
+    return `
     <div class="user-row-group">
       <div class="user-row">
-        <span>${escHtml(u.name)}</span>
-        <label><input type="checkbox" data-user-active="${u.id}" ${u.active ? 'checked' : ''}> active</label>
+        <span>${escHtml(u.name)}${isSelf ? ' (you)' : ''}</span>
+        ${canEditOthers ? `
+          <label><input type="checkbox" data-user-active="${u.id}" ${u.active ? 'checked' : ''}> active</label>
+          <label><input type="checkbox" data-user-admin="${u.id}" ${u.is_admin ? 'checked' : ''}> admin</label>
+        ` : `
+          ${u.active ? '' : '<span class="no-password-tag">inactive</span>'}
+          ${u.is_admin ? '<span class="admin-tag">admin</span>' : ''}
+        `}
         ${u.has_password ? '' : '<span class="no-password-tag">no password set</span>'}
-        <input type="password" data-user-password-input="${u.id}" placeholder="New password" autocomplete="new-password">
-        <button class="secondary" data-user-set-password="${u.id}">Set password</button>
+        ${isSelf || isAdmin ? `
+          <input type="password" data-user-password-input="${u.id}" placeholder="New password" autocomplete="new-password">
+          <button class="secondary" data-user-set-password="${u.id}">Set password</button>
+        ` : ''}
       </div>
       ${revealedToken && revealedToken.userId === u.id ? `
         <div class="token-reveal">
@@ -1025,15 +1044,20 @@ function renderUsersList() {
           <button class="secondary" data-copy-token="${u.id}">Copy</button>
           <button class="secondary" data-dismiss-token="${u.id}">Done</button>
         </div>
-      ` : `
+      ` : isSelf ? `
         <div class="user-row token-row">
           ${u.has_api_token ? '' : '<span class="no-password-tag">no API token (for MCP access)</span>'}
           <button class="secondary" data-user-gen-token="${u.id}">${u.has_api_token ? 'Regenerate' : 'Generate'} API token</button>
           ${u.has_api_token ? `<button class="danger" data-user-revoke-token="${u.id}">Revoke token</button>` : ''}
         </div>
-      `}
+      ` : isAdmin && u.has_api_token ? `
+        <div class="user-row token-row">
+          <button class="danger" data-user-revoke-token="${u.id}">Revoke API token</button>
+        </div>
+      ` : ''}
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
 document.getElementById('manageUsersBtn').addEventListener('click', () => {
@@ -1125,9 +1149,12 @@ document.getElementById('usersList').addEventListener('click', async (e) => {
 });
 
 document.getElementById('usersList').addEventListener('change', async (e) => {
-  const userId = e.target.dataset.userActive;
-  if (!userId) return;
-  await api(`/users/${userId}`, { method: 'PATCH', body: JSON.stringify({ active: e.target.checked }) });
+  const { userActive, userAdmin } = e.target.dataset;
+  if (userActive) {
+    await api(`/users/${userActive}`, { method: 'PATCH', body: JSON.stringify({ active: e.target.checked }) });
+  } else if (userAdmin) {
+    await api(`/users/${userAdmin}`, { method: 'PATCH', body: JSON.stringify({ is_admin: e.target.checked }) });
+  }
 });
 
 // ---- Auth gate ----
