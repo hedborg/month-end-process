@@ -70,7 +70,9 @@ directly in the database (`UPDATE users SET is_admin = true WHERE name = '...'`)
 
 `POST /mcp` (mounted on the same app, same domain, same TLS — no separate
 service or subdomain) exposes the checklist as MCP tools: `list_cycles`,
-`get_overview`, `get_my_tasks`, `list_tasks`, `update_task`, `clone_cycle`.
+`get_overview`, `get_my_tasks`, `list_tasks`, `update_task`, `clone_cycle` —
+plus the personal to-do tools `get_my_day`, `list_my_todos`, `add_todo`,
+`update_todo`, `complete_todo`, `archive_todo` (see My To-Do, below).
 It's a **remote** MCP server (Streamable HTTP transport, stateless — a fresh
 `McpServer` + transport per request), not a local/stdio one, so any
 MCP-capable client can add it by URL — your own Claude Code, a shared
@@ -223,6 +225,46 @@ the description-vs-comment distinction under Data model above. Tasks that were
 applicable" is a property of the task, not the month's progress. Cloning into
 a month that already exists returns a 409. The "Clone into new month" button
 in the UI drives this with a one-line confirmation.
+
+## My To-Do (personal, private)
+
+A per-user to-do list next to the shared checklist — for everything that
+isn't a month-end task but still belongs on your plate ("chase the auditor",
+"waiting on Ops for the Striga PDF"). Built to be driven by Claude as much as
+by hand: a morning "what's in MEP today?" goes to one MCP call,
+`get_my_day`, which returns both your outstanding month-end tasks and your
+due to-dos.
+
+**Private by construction.** `personal_todos.owner_id` is always the
+authenticated caller — `req.session.userId` in the web app,
+`extra.authInfo.extra.userId` over MCP — and no route or tool accepts a user
+id as input. All queries live in `lib/todos.js` and every one filters on
+`owner_id`, so there is no code path that reads someone else's list —
+admins included. Someone else's to-do id returns 404, exactly like an id
+that doesn't exist. The MCP tool descriptions also tell the model to keep
+to-dos out of anything shared (team channels, emails), since a morning
+agenda posted to Slack should carry `mep_tasks` only.
+
+Data model (`personal_todos`, migration M7): `title`, `notes` (standing
+context), `status` (`open` / `waiting` / `done` / `archived`), `priority`
+(`high` / `normal` / `low`), `due_date`, `follow_up_date` (when to chase a
+`waiting` item), optional `linked_task_id` pointing at a month-end task,
+`created_via` (`web` / `mcp` — MCP-created items show a ✨ in the UI), and
+`completed_at`, which follows status automatically (set on done, cleared on
+reopen). Delete is a soft delete to `archived`: gone from every view, but
+recoverable in the database if you — or Claude — removed something by
+mistake.
+
+"Today" is computed in the team's timezone (`APP_TZ`, default
+`Europe/Stockholm`), not the server's UTC, so a 00:30 morning check doesn't
+see yesterday's list. The UI uses the server's date for its buckets so it
+always agrees with what Claude sees.
+
+`get_my_day` returns `mep_tasks` — your outstanding tasks across **every
+open cycle** (month-ends overlap), each flagged with which of your roles
+is still outstanding (`booking_outstanding` / `check_outstanding`) — and
+`private_todos` — to-dos due, overdue or due for follow-up today, plus
+waiting items that aren't due yet.
 
 ## Production (DigitalOcean Droplet)
 

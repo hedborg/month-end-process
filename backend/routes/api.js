@@ -5,6 +5,7 @@ const pool = require('../db');
 const { cloneCycleForward } = require('../lib/cycles');
 const { hashToken } = require('../lib/apiTokens');
 const { getPivot } = require('../lib/pivot');
+const todos = require('../lib/todos');
 
 const router = express.Router();
 
@@ -321,6 +322,50 @@ router.post('/cycles/:id/tasks/reorder', asyncHandler(async (req, res) => {
 router.get('/report/pivot', asyncHandler(async (req, res) => {
   const months = parseInt(req.query.months, 10) || 6;
   res.json(await getPivot(pool, months));
+}));
+
+// ---------------------------------------------------------------------------
+// My To-Do — personal, private to the signed-in user (see lib/todos.js).
+// Deliberately no user id anywhere in these routes: the owner is always
+// req.session.userId.
+// ---------------------------------------------------------------------------
+
+const TODO_FIELDS = ['title', 'notes', 'status', 'priority', 'due_date', 'follow_up_date', 'linked_task_id'];
+const pickTodoFields = (body) => Object.fromEntries(
+  TODO_FIELDS.filter((k) => body[k] !== undefined).map((k) => [k, body[k]]),
+);
+
+// Same payload as the get_my_day MCP tool — the My To-Do tab's header.
+router.get('/my-day', asyncHandler(async (req, res) => {
+  res.json(await todos.getMyDay(pool, req.session.userId));
+}));
+
+router.get('/todos', asyncHandler(async (req, res) => {
+  const view = req.query.view || 'all';
+  if (!['active', 'today', 'overdue', 'upcoming', 'waiting', 'done', 'all'].includes(view)) {
+    return res.status(400).json({ error: 'unknown view' });
+  }
+  res.json(await todos.listTodos(pool, req.session.userId, view));
+}));
+
+router.post('/todos', asyncHandler(async (req, res) => {
+  const result = await todos.createTodo(pool, req.session.userId, pickTodoFields(req.body), 'web');
+  if (!result.ok) return res.status(result.status).json({ error: result.error });
+  res.status(201).json(result.todo);
+}));
+
+router.patch('/todos/:id', asyncHandler(async (req, res) => {
+  const result = await todos.updateTodo(pool, req.session.userId, Number(req.params.id), pickTodoFields(req.body));
+  if (!result.ok) return res.status(result.status).json({ error: result.error });
+  res.json(result.todo);
+}));
+
+// Soft delete — archived to-dos disappear from every view but stay in the
+// table, so a mistaken delete (by you or by Claude) is recoverable.
+router.delete('/todos/:id', asyncHandler(async (req, res) => {
+  const result = await todos.updateTodo(pool, req.session.userId, Number(req.params.id), { status: 'archived' });
+  if (!result.ok) return res.status(result.status).json({ error: result.error });
+  res.status(204).end();
 }));
 
 module.exports = router;

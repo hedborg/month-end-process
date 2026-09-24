@@ -67,10 +67,34 @@ what links a task's history together across months in the Overview. If you
 missed adding a task and cycles already exist for it, add it to the
 earliest month and clone forward from there instead.
 
+## My To-Do
+
+Your own private list — **only you can see it**, not your colleagues and
+not admins. Use it for anything that isn't a month-end task: follow-ups,
+reminders, things you're waiting on.
+
+- **Add** by typing in the box at the top and pressing Enter; optionally
+  pick a due date and priority first.
+- **Tick the checkbox** to mark something done (untick to reopen). Done
+  items stay visible for 14 days.
+- **Click a to-do's title** to edit it — add notes, change the due date, or
+  set it to **Waiting on someone** with a **Follow up on** date for when to
+  chase. It reappears under Today on that date.
+- The list is grouped into Overdue, Today, Next 7 days, Later / no date,
+  Waiting on someone, and Done.
+- The panel on the right lists your outstanding month-end tasks across all
+  open months, so the tab doubles as your "what's on my plate today" page.
+- A ✨ means Claude added it. If you've connected Claude to MEP, you can ask
+  it things like "what's in MEP today?", "remind me to chase the auditor on
+  Friday", or "mark the VAT file as done".
+
 ## Users
 
-**Users** button (top right) — add people, mark someone inactive, or set/
-change a password for anyone on the list. Passwords are hashed; nobody,
+**Users** button (top right). Everyone can change their own password and
+generate their own API token for connecting Claude. Admins can also add
+people, mark someone inactive, reset anyone's password, make someone an
+admin, and revoke someone else's token. Nobody, admins included, can
+generate a token for someone else. Passwords are hashed; nobody,
 including whoever built this tool, can look up what a password actually is.
 
 ## Dark mode
