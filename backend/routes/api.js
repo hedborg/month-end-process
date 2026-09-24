@@ -16,20 +16,49 @@ const asyncHandler = (fn) => (req, res) => fn(req, res).catch((err) => {
 const STATUS_VALUES = ['not_started', 'in_progress', 'waiting', 'ready_to_be_booked', 'done', 'n_a'];
 
 // Columns safe to send to the client — never password_hash.
-const USER_COLUMNS = `id, name, email, active, created_at,
+const USER_COLUMNS = `id, name, email, active, is_admin, created_at,
   (password_hash IS NOT NULL) AS has_password,
   (api_token_hash IS NOT NULL) AS has_api_token`;
+
+// Re-reads the caller on every request rather than trusting anything cached
+// in the session, so a demotion or deactivation takes effect immediately.
+async function loadCaller(req) {
+  const { rows } = await pool.query(
+    'SELECT id, is_admin FROM users WHERE id = $1 AND active = true',
+    [req.session.userId],
+  );
+  return rows[0] || null;
+}
+
+// Middleware, so not wrapped in asyncHandler (which doesn't pass `next`).
+function requireAdmin(req, res, next) {
+  loadCaller(req).then((caller) => {
+    if (!caller || !caller.is_admin) return res.status(403).json({ error: 'Admin only' });
+    next();
+  }).catch((err) => {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Users
 // ---------------------------------------------------------------------------
+//
+// Who can do what — setting someone's password or minting their API token
+// is the same as being able to log in as them, so neither is open to
+// everyone:
+//   - anyone:  list users (needed for the owner dropdowns)
+//   - self:    change own password/email, generate/revoke own API token
+//   - admin:   add users; change anyone's name/email/password/active/admin;
+//              revoke (but never generate) someone else's API token
 
 router.get('/users', asyncHandler(async (_req, res) => {
   const { rows } = await pool.query(`SELECT ${USER_COLUMNS} FROM users ORDER BY name`);
   res.json(rows);
 }));
 
-router.post('/users', asyncHandler(async (req, res) => {
+router.post('/users', requireAdmin, asyncHandler(async (req, res) => {
   const { name, email, password } = req.body;
   if (!name) return res.status(400).json({ error: 'name is required' });
   if (password && password.length < 8) {
@@ -44,7 +73,21 @@ router.post('/users', asyncHandler(async (req, res) => {
 }));
 
 router.patch('/users/:id', asyncHandler(async (req, res) => {
+  const caller = await loadCaller(req);
+  if (!caller) return res.status(401).json({ error: 'Login required' });
+  const isSelf = caller.id === Number(req.params.id);
+  if (!isSelf && !caller.is_admin) return res.status(403).json({ error: 'You can only change your own account' });
+
   const { name, email, active, password } = req.body;
+  const isAdminFlag = req.body.is_admin;
+  if ((name !== undefined || active !== undefined || isAdminFlag !== undefined) && !caller.is_admin) {
+    return res.status(403).json({ error: 'Only an admin can change name, active or admin' });
+  }
+  // Stops the last admin from locking everyone out by demoting or
+  // deactivating themselves — another admin has to do it.
+  if (isSelf && (active === false || isAdminFlag === false)) {
+    return res.status(400).json({ error: "You can't deactivate or demote yourself" });
+  }
   if (password && password.length < 8) {
     return res.status(400).json({ error: 'password must be at least 8 characters' });
   }
@@ -54,9 +97,10 @@ router.patch('/users/:id', asyncHandler(async (req, res) => {
        name = COALESCE($1, name),
        email = COALESCE($2, email),
        active = COALESCE($3, active),
-       password_hash = COALESCE($4, password_hash)
-     WHERE id = $5 RETURNING ${USER_COLUMNS}`,
-    [name, email, active, passwordHash, req.params.id],
+       password_hash = COALESCE($4, password_hash),
+       is_admin = COALESCE($5, is_admin)
+     WHERE id = $6 RETURNING ${USER_COLUMNS}`,
+    [name, email, active, passwordHash, isAdminFlag, req.params.id],
   );
   if (!rows.length) return res.status(404).json({ error: 'not found' });
   res.json(rows[0]);
@@ -64,8 +108,12 @@ router.patch('/users/:id', asyncHandler(async (req, res) => {
 
 // Issues a new personal API token for MCP access, replacing any existing
 // one. The raw token is returned exactly once here — only its hash is ever
-// stored, so it can't be recovered again after this response.
+// stored, so it can't be recovered again after this response. Self only,
+// admins included: whoever holds the raw token can act as that user.
 router.post('/users/:id/token', asyncHandler(async (req, res) => {
+  if (req.session.userId !== Number(req.params.id)) {
+    return res.status(403).json({ error: 'You can only generate a token for yourself' });
+  }
   const rawToken = `mep_${crypto.randomBytes(32).toString('hex')}`;
   const { rows } = await pool.query(
     'UPDATE users SET api_token_hash = $1 WHERE id = $2 RETURNING id',
@@ -76,6 +124,11 @@ router.post('/users/:id/token', asyncHandler(async (req, res) => {
 }));
 
 router.delete('/users/:id/token', asyncHandler(async (req, res) => {
+  const caller = await loadCaller(req);
+  if (!caller) return res.status(401).json({ error: 'Login required' });
+  if (caller.id !== Number(req.params.id) && !caller.is_admin) {
+    return res.status(403).json({ error: 'You can only revoke your own token' });
+  }
   const { rows } = await pool.query(
     'UPDATE users SET api_token_hash = NULL WHERE id = $1 RETURNING id',
     [req.params.id],

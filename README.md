@@ -40,6 +40,32 @@ log in until an admin sets one for them via the **Users** modal — there's no
 self-service signup or password reset, deliberately, for a team this size.
 Login is by first name (the `users.name` column, which is unique), not email.
 
+### Admins vs. everyone else
+
+Setting someone's password or generating their API token is equivalent to
+being able to log in as them, so the **Users** modal is permission-gated
+(`users.is_admin`, enforced server-side in `routes/api.js`):
+
+| Action | Anyone | Self | Admin |
+|---|---|---|---|
+| List users | ✓ | | |
+| Change own password / email | | ✓ | |
+| Generate own API token | | ✓ | |
+| Revoke an API token | | own | anyone's |
+| Add users; change anyone's name, password, active, admin | | | ✓ |
+| Generate someone *else's* API token | | | ✗ — nobody can |
+
+Admins can't demote or deactivate themselves, so the team can't be left
+with no admin by accident — another admin has to do it. Permissions are
+re-read from the database on every request, so a demotion or deactivation
+takes effect immediately, even for an already-open session.
+
+The first admin is bootstrapped by the startup migration (M6 in
+`server.js`): the user named `Niklas` is promoted, but only while no admin
+exists at all — so demoting him later through the UI isn't undone on the
+next restart. If no user matches, startup logs a warning; promote someone
+directly in the database (`UPDATE users SET is_admin = true WHERE name = '...'`).
+
 ## MCP server
 
 `POST /mcp` (mounted on the same app, same domain, same TLS — no separate

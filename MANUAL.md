@@ -6,9 +6,11 @@ at-a-glance view across months.
 ## Signing in
 
 Enter your first name and password. If you don't have a password yet, ask
-whoever administers the tool to set one for you in the **Users** modal —
+an admin to set one for you in the **Users** modal —
 there's no self-service signup or "forgot password," on purpose, for a team
-this size. You stay signed in for 30 days; **Logout** (top right) ends that
+this size. Once you're in, the **Users** modal lets you change your own
+password and generate your own API token (for Claude/MCP); only admins can
+add people or change anyone else's account. You stay signed in for 30 days; **Logout** (top right) ends that
 early if you're on a shared machine.
 
 ## Overview (the home page)
