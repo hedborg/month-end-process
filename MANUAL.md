@@ -48,7 +48,10 @@ early if you're on a shared machine.
 - Drag the `⠿` handle to reorder tasks.
 - **Hide completed** and **Show my tasks** (same as on the Overview,
   checked by default), plus a Booking Status dropdown, to narrow a long list.
-- **+ Add Task** for something new this month.
+- **+ Add Task** for something new. It stays on the checklist and is copied
+  into every following month. If you've connected Claude to MEP, you can
+  also just ask it to add a task (name, due day, description, who books and
+  who checks) — it can't add to a locked month.
 - **Dependency** — click in for a dropdown of this month's task names, or
   type your own text (e.g. "All the above").
 - **Links** column holds both a document URL and a Power BI URL; a 🔗/📊 icon

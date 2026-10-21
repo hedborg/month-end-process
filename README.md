@@ -70,9 +70,34 @@ directly in the database (`UPDATE users SET is_admin = true WHERE name = '...'`)
 
 `POST /mcp` (mounted on the same app, same domain, same TLS — no separate
 service or subdomain) exposes the checklist as MCP tools: `list_cycles`,
-`get_overview`, `get_my_tasks`, `list_tasks`, `update_task`, `clone_cycle` —
-plus the personal to-do tools `get_my_day`, `list_my_todos`, `add_todo`,
-`update_todo`, `complete_todo`, `archive_todo` (see My To-Do, below).
+`get_overview`, `get_my_tasks`, `list_tasks`, `create_task`, `update_task`,
+`list_people`, `clone_cycle` — plus the personal to-do tools `get_my_day`,
+`list_my_todos`, `add_todo`, `update_todo`, `complete_todo`, `archive_todo`
+(see My To-Do, below).
+
+Setting up a new checklist task needs no trip to the web UI:
+
+- **`create_task`** — same as "+ Add Task": takes `task_name` (required),
+  `description`, `due_date` (free text, as in the Due column: `15`, `15.3`,
+  `25th Prev Month`), `dependency_text`, `booking_responsible`,
+  `quality_check`, `url`, `powerbi_url`, `booking_status` / `check_status`
+  (default `not_started`). Goes into the most recent **open** cycle unless
+  `cycle_label` is given; refuses a `locked` cycle and a `task_name` that
+  already exists in that cycle. The task is appended at the bottom and
+  returned in the same shape as a `list_tasks` row. It's an ordinary task
+  from then on — cloning carries it forward like any other.
+- **`update_task`** — besides status/comment/links/description, can also
+  change `task_name`, `due_date`, `dependency_text`, `booking_responsible`
+  and `quality_check`. Only the fields passed change; an empty string clears
+  an assignee.
+- **`list_people`** — the names that can be assigned (active users only).
+
+People are given by **name**, not id: a case-insensitive full name, or a
+first name when it's unambiguous (`Niklas` → `Niklas Hedborg`). Unknown,
+ambiguous or deactivated names are rejected with the list of valid names.
+`dependency_text` is stored as free text, exactly like the Dependency
+column in the UI — it's shown, not enforced. Any authenticated user can
+create tasks, same as they can update them.
 It's a **remote** MCP server (Streamable HTTP transport, stateless — a fresh
 `McpServer` + transport per request), not a local/stdio one, so any
 MCP-capable client can add it by URL — your own Claude Code, a shared
@@ -132,6 +157,16 @@ cp ../.env.example .env   # edit as needed
 npm install
 npm run dev
 # → http://localhost:3000
+```
+
+Tests (`backend/test/`, Node's built-in runner) run the MCP task tools
+against a real Postgres. They build a throwaway schema from `db/01-init.sql`
+plus the startup migrations (`lib/migrate.js`) and drop it afterwards, so
+pointing them at the dev database is safe:
+
+```bash
+cd backend
+DB_PORT=5433 npm test
 ```
 
 ## Data model
