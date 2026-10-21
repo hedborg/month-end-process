@@ -31,6 +31,21 @@ const COMMENT_FIELD = z.string().optional().describe(
   + "so nothing here carries forward. Not for standing instructions — use description for that."
 );
 
+// The task-definition fields below are, like description, carried forward
+// unchanged on clone.
+const DUE_DATE_FIELD = z.string().optional().describe(
+  'Free text, same as the Due column — usually a working day of the month ("15"), sometimes a '
+  + 'day.month ("15.3") or a phrase ("25th Prev Month", "N/A"). Stored as given, not parsed.'
+);
+const DEPENDENCY_FIELD = z.string().optional().describe(
+  'Free text naming what this task waits on — normally the exact task_name of another task in the '
+  + 'cycle (e.g. "Update FX Rates"). Informational only: it is shown in the checklist, not enforced.'
+);
+const personField = (role) => z.string().optional().describe(
+  `${role}, by name as listed by list_people — a full name or an unambiguous first name (e.g. "Niklas"). `
+  + 'Resolved to a user; an unknown or ambiguous name is rejected with the list of valid names.'
+);
+
 // Personal to-dos are visible only to their owner in the app, so the tools
 // ask the model to respect that when it repeats them anywhere — e.g. a
 // morning agenda posted to a team channel should carry mep_tasks only.
@@ -85,6 +100,48 @@ async function resolveCycle(pool, label) {
   return rows[0] || null;
 }
 
+// Where create_task puts a new task when no cycle is named: the most recent
+// cycle that's still open, not just the most recent one — a freshly locked
+// month shouldn't swallow tasks meant for the month still in progress.
+async function resolveOpenCycle(pool, label) {
+  if (label) return resolveCycle(pool, label);
+  const { rows } = await pool.query(
+    "SELECT * FROM cycles WHERE status = 'open' ORDER BY year DESC, month DESC LIMIT 1",
+  );
+  return rows[0] || null;
+}
+
+// Only active users can be newly assigned — a deactivated person keeps any
+// task they're already on, but isn't offered (or accepted) for new ones.
+async function listPeople(pool) {
+  const { rows } = await pool.query('SELECT name FROM users WHERE active ORDER BY name');
+  return rows.map((r) => r.name);
+}
+
+// Turns a person given by name into a user id, so Claude can say "Niklas"
+// rather than having to know ids. A case-insensitive exact match on the full
+// name wins; otherwise a unique first-name match ("Niklas" → "Niklas
+// Hedborg"). Empty string means "unassign" (null). Anything unknown or
+// ambiguous is an error that lists the valid names, so the model can retry.
+async function resolvePerson(pool, name, field) {
+  if (name === '') return { ok: true, id: null };
+  const wanted = name.trim().toLowerCase();
+  const { rows } = await pool.query('SELECT id, name FROM users WHERE active ORDER BY name');
+  const valid = `Valid names: ${rows.map((u) => u.name).join(', ')}.`;
+
+  const exact = rows.filter((u) => u.name.toLowerCase() === wanted);
+  if (exact.length === 1) return { ok: true, id: exact[0].id };
+  const byFirstName = rows.filter((u) => u.name.toLowerCase().startsWith(`${wanted} `));
+  if (byFirstName.length === 1) return { ok: true, id: byFirstName[0].id };
+  if (byFirstName.length > 1) {
+    return {
+      ok: false,
+      error: `Ambiguous ${field} "${name}" — matches ${byFirstName.map((u) => u.name).join(', ')}. Use the full name. ${valid}`,
+    };
+  }
+  return { ok: false, error: `Unknown ${field} "${name}". ${valid}` };
+}
+
 const TASK_SELECT = `
   SELECT t.id, t.task_name, t.description, t.dependency_text, t.due_date,
          t.booking_status, t.check_status, t.date_finished, t.comment,
@@ -97,6 +154,8 @@ const TASK_SELECT = `
 
 function getServer(pool) {
   const server = new McpServer({ name: 'month-end-process', version: '1.0.0' });
+  const asText = (value) => ({ content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] });
+  const asError = (message) => ({ content: [{ type: 'text', text: message }], isError: true });
 
   server.registerTool('list_cycles', {
     description: 'List every month-end cycle (id, label like "2026-07", status).',
@@ -148,11 +207,92 @@ function getServer(pool) {
     return { content: [{ type: 'text', text: JSON.stringify({ cycle: cycle.label, tasks: rows }, null, 2) }] };
   });
 
+  server.registerTool('list_people', {
+    description: 'List the names that can be assigned as Booking Responsible or Quality Check on a task '
+      + '(active users). Pass one of these to create_task / update_task.',
+    inputSchema: {},
+  }, async () => asText(await listPeople(pool)));
+
+  server.registerTool('create_task', {
+    description: 'Add a new task to a month-end cycle — the same as "Add task" in the checklist. Defaults to '
+      + 'the most recent open cycle; refuses a locked cycle, and refuses a task_name that already exists in '
+      + 'that cycle. The new task is a permanent part of the checklist: like every other task, it is '
+      + 'carried forward into next month when the cycle is cloned (description, due date, dependency, '
+      + 'people and links copied; statuses reset; comment cleared). People are given by name — call '
+      + 'list_people for the valid names. Returns the created task in the same shape as list_tasks. '
+      + FIELD_NOTE,
+    inputSchema: {
+      cycle_label: z.string().optional().describe('e.g. "2026-07" — defaults to the most recent open cycle'),
+      task_name: z.string().describe('Short name as shown in the checklist, e.g. "AI Spend Overview Refresh"'),
+      description: DESCRIPTION_FIELD,
+      due_date: DUE_DATE_FIELD,
+      dependency_text: DEPENDENCY_FIELD,
+      booking_responsible: personField('Booking Responsible (does the work)'),
+      quality_check: personField('Quality Check (reviews it)'),
+      url: z.string().optional().describe('The task\'s reference URL (🔗 in the Links column)'),
+      powerbi_url: z.string().optional().describe('The task\'s Power BI URL (📊 in the Links column)'),
+      booking_status: STATUS_ENUM.optional().describe('Defaults to not_started'),
+      check_status: STATUS_ENUM.optional().describe('Defaults to not_started'),
+    },
+  }, async (args) => {
+    const taskName = args.task_name.trim();
+    if (!taskName) return asError('task_name is required.');
+
+    const cycle = await resolveOpenCycle(pool, args.cycle_label);
+    if (!cycle) return asError(args.cycle_label ? 'No matching cycle found.' : 'No open cycle found.');
+    if (cycle.status === 'locked') {
+      return asError(`Cycle ${cycle.label} is locked — unlock it in the app before adding tasks to it.`);
+    }
+
+    // Guards against a retried call creating the same task twice; duplicate
+    // names in one cycle would also muddle the overview, which follows a task
+    // across months by name/lineage.
+    const { rows: dupes } = await pool.query(
+      'SELECT id FROM tasks WHERE cycle_id = $1 AND lower(task_name) = lower($2)',
+      [cycle.id, taskName],
+    );
+    if (dupes.length) return asError(`Cycle ${cycle.label} already has a task named "${taskName}" (id ${dupes[0].id}).`);
+
+    const people = {};
+    for (const field of ['booking_responsible', 'quality_check']) {
+      if (args[field] === undefined) continue;
+      const person = await resolvePerson(pool, args[field], field);
+      if (!person.ok) return asError(person.error);
+      people[field] = person.id;
+    }
+
+    // Appended at the bottom, same as the UI's Add task (routes/api.js).
+    const { rows } = await pool.query(
+      `INSERT INTO tasks (
+         cycle_id, sort_order, task_name, description, dependency_text, due_date,
+         booking_responsible_id, quality_check_id, url, powerbi_url, booking_status, check_status
+       ) VALUES (
+         $1, (SELECT COALESCE(MAX(sort_order), 0) + 10 FROM tasks WHERE cycle_id = $1),
+         $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+       ) RETURNING id`,
+      [
+        cycle.id, taskName, args.description || null, args.dependency_text || null, args.due_date || null,
+        people.booking_responsible ?? null, people.quality_check ?? null, args.url || null,
+        args.powerbi_url || null, args.booking_status || 'not_started', args.check_status || 'not_started',
+      ],
+    );
+    const { rows: created } = await pool.query(`${TASK_SELECT} WHERE t.id = $1`, [rows[0].id]);
+    return asText({ cycle: cycle.label, task: created[0] });
+  });
+
   server.registerTool('update_task', {
-    description: 'Update a task\'s description, booking status, check status, comment, finished date, task URL, or Power BI URL. Get the task_id from list_tasks or get_my_tasks first. ' + FIELD_NOTE,
+    description: 'Update a task\'s name, description, due date, dependency, Booking Responsible, Quality Check, '
+      + 'booking status, check status, comment, finished date, task URL, or Power BI URL. Only the fields you '
+      + 'pass change. Get the task_id from list_tasks or get_my_tasks first. People are given by name (see '
+      + 'list_people); pass an empty string to unassign. ' + FIELD_NOTE,
     inputSchema: {
       task_id: z.number().int().describe('Task id, from list_tasks or get_my_tasks'),
+      task_name: z.string().optional().describe('Rename the task'),
       description: DESCRIPTION_FIELD,
+      due_date: DUE_DATE_FIELD,
+      dependency_text: DEPENDENCY_FIELD,
+      booking_responsible: personField('Booking Responsible (does the work)'),
+      quality_check: personField('Quality Check (reviews it)'),
       booking_status: STATUS_ENUM.optional(),
       check_status: STATUS_ENUM.optional(),
       comment: COMMENT_FIELD,
@@ -160,27 +300,48 @@ function getServer(pool) {
       url: z.string().optional().describe('The task\'s reference URL (🔗 in the Links column)'),
       powerbi_url: z.string().optional().describe('The task\'s Power BI URL (📊 in the Links column)'),
     },
-  }, async ({ task_id: taskId, description, booking_status: bookingStatus, check_status: checkStatus, comment, date_finished: dateFinished, url, powerbi_url: powerbiUrl }) => {
+  }, async ({
+    task_id: taskId, task_name: taskName, description, due_date: dueDate, dependency_text: dependencyText,
+    booking_responsible: bookingResponsible, quality_check: qualityCheck,
+    booking_status: bookingStatus, check_status: checkStatus, comment, date_finished: dateFinished, url, powerbi_url: powerbiUrl,
+  }) => {
     const fields = [];
     const values = [];
-    if (description !== undefined) { values.push(description); fields.push(`description = $${values.length}`); }
-    if (bookingStatus) { values.push(bookingStatus); fields.push(`booking_status = $${values.length}`); }
-    if (checkStatus) { values.push(checkStatus); fields.push(`check_status = $${values.length}`); }
-    if (comment !== undefined) { values.push(comment); fields.push(`comment = $${values.length}`); }
-    if (dateFinished) { values.push(dateFinished); fields.push(`date_finished = $${values.length}`); }
-    if (url !== undefined) { values.push(url); fields.push(`url = $${values.length}`); }
-    if (powerbiUrl !== undefined) { values.push(powerbiUrl); fields.push(`powerbi_url = $${values.length}`); }
+    const set = (column, value) => { values.push(value); fields.push(`${column} = $${values.length}`); };
 
-    if (!fields.length) return { content: [{ type: 'text', text: 'No fields to update.' }], isError: true };
+    if (taskName !== undefined) {
+      if (!taskName.trim()) return asError('task_name cannot be empty.');
+      set('task_name', taskName.trim());
+    }
+    if (description !== undefined) set('description', description);
+    if (dueDate !== undefined) set('due_date', dueDate || null);
+    if (dependencyText !== undefined) set('dependency_text', dependencyText || null);
+    for (const [field, column, name] of [
+      ['booking_responsible', 'booking_responsible_id', bookingResponsible],
+      ['quality_check', 'quality_check_id', qualityCheck],
+    ]) {
+      if (name === undefined) continue;
+      const person = await resolvePerson(pool, name, field);
+      if (!person.ok) return asError(person.error);
+      set(column, person.id);
+    }
+    if (bookingStatus) set('booking_status', bookingStatus);
+    if (checkStatus) set('check_status', checkStatus);
+    if (comment !== undefined) set('comment', comment);
+    if (dateFinished) set('date_finished', dateFinished);
+    if (url !== undefined) set('url', url);
+    if (powerbiUrl !== undefined) set('powerbi_url', powerbiUrl);
+
+    if (!fields.length) return asError('No fields to update.');
 
     values.push(taskId);
     const { rows } = await pool.query(
-      `UPDATE tasks SET ${fields.join(', ')}, updated_at = now() WHERE id = $${values.length}
-       RETURNING id, task_name, description, booking_status, check_status, comment, date_finished, url, powerbi_url`,
+      `UPDATE tasks SET ${fields.join(', ')}, updated_at = now() WHERE id = $${values.length} RETURNING id`,
       values,
     );
-    if (!rows.length) return { content: [{ type: 'text', text: `No task with id ${taskId}.` }], isError: true };
-    return { content: [{ type: 'text', text: JSON.stringify(rows[0], null, 2) }] };
+    if (!rows.length) return asError(`No task with id ${taskId}.`);
+    const { rows: updated } = await pool.query(`${TASK_SELECT} WHERE t.id = $1`, [taskId]);
+    return asText(updated[0]);
   });
 
   server.registerTool('clone_cycle', {
@@ -199,8 +360,6 @@ function getServer(pool) {
   // Every tool below acts only on the calling user's own list; the owner is
   // always the token's user, never an input.
 
-  const asText = (value) => ({ content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] });
-  const asError = (message) => ({ content: [{ type: 'text', text: message }], isError: true });
   const ownerOf = (extra) => extra.authInfo.extra.userId;
 
   server.registerTool('get_my_day', {
@@ -298,4 +457,4 @@ function mountMcp(app, pool, { oauthProvider, mcpResourceUrl }) {
   app.delete('/mcp', methodNotAllowed);
 }
 
-module.exports = { mountMcp };
+module.exports = { mountMcp, getServer };
